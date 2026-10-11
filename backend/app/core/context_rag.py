@@ -133,8 +133,8 @@ class ChatContextRAG:
         if not query_words:
             return []
 
-        # Find specific references like numbers (e.g. 'topic 3', 'point 2', 'question 4', 'theme 1')
-        specific_refs = re.findall(r'\b(?:topic|point|question|theme|part|item|step|option|q)\s*(\d+)\b', query.lower())
+        # Find specific references like numbers (e.g. 'topic 3', 'point 2', 'question 4', 'section 1', 'module 2')
+        specific_refs = re.findall(r'\b(?:topic|point|question|theme|part|item|step|option|q|section|module|pillar|recipe|slide|rule|case|idea)\s*(\d+)\b', query.lower())
         named_entities = [w for w in query_words if len(w) > 4]
 
         scored_chunks: List[Tuple[ChatChunk, float]] = []
@@ -169,6 +169,11 @@ class ChatContextRAG:
             # 5. Favor assistant deliverables for output modification queries
             if chunk.role == "assistant" and any(m in query.lower() for m in ["change", "modify", "update", "replace", "revise", "in ", "expand", "remove", "add"]):
                 score *= 1.3
+
+            # 6. Recency Boost: Higher turn indices are much more likely to be the active context
+            max_turn = max((c.turn_index for c in self.chunks), default=1)
+            recency_ratio = chunk.turn_index / max(1, max_turn)
+            score += recency_ratio * 5.0
 
             if score > 1.5:
                 scored_chunks.append((chunk, score))
@@ -240,26 +245,26 @@ class ChatContextRAG:
 
         # 4. Formatted Master Context Block
         formatted_parts = []
-        if compressed_memory_text:
-            formatted_parts.append(compressed_memory_text)
+
+        if recent_deliverables_text:
+            formatted_parts.append(
+                "[MOST RECENT CONVERSATION & COMPLETE PRECEDING DELIVERABLE (PRIMARY ACTIVE CONTEXT)]:\n"
+                f"{recent_deliverables_text}\n"
+                "CRITICAL CONTINUITY DIRECTIVE: The user's query is an immediate reply to this latest turn. Address their doubt, question, or modification directly against this most recent output!"
+            )
 
         if rag_excerpts_text and any(word in current_user_query.lower() for word in [
             "change", "modify", "update", "replace", "revise", "in ", "point", "topic",
             "question", "theme", "part", "explain", "remember", "previous", "earlier", "first"
         ]):
             formatted_parts.append(
-                "[RETRIEVED PREVIOUS DELIVERABLES & GROUND TRUTH (RAG RECOVERY)]:\n"
-                "The user is specifically referencing the following verified excerpts from previous chat outputs:\n"
+                "[HISTORICAL CHAT CONTEXT & RELEVANT EXCERPTS FROM EARLIER TURNS]:\n"
                 f"{rag_excerpts_text}\n"
-                "MANDATORY GROUNDING DIRECTIVE: Ground all revisions, additions, or answers strictly on these verified previous excerpts. DO NOT hallucinate different previous outputs!"
+                "NOTE: These excerpts provide historical background. Do NOT let them override or replace the latest active conversation above!"
             )
 
-        if recent_deliverables_text:
-            formatted_parts.append(
-                "[MOST RECENT CONVERSATION & COMPLETE PRECEDING DELIVERABLE]:\n"
-                f"{recent_deliverables_text}\n"
-                "CRITICAL CONTINUITY DIRECTIVE: When the user asks for changes, additions, or continuations, modify the previous deliverable as requested while keeping consistent with all other accepted parts!"
-            )
+        if compressed_memory_text:
+            formatted_parts.append(compressed_memory_text)
 
         formatted_context_block = "\n\n" + "\n\n".join(formatted_parts) + "\n\n" if formatted_parts else ""
 

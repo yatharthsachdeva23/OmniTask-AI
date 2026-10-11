@@ -317,18 +317,17 @@ class WorkerPool:
         rag_context_blocks = []
         if user_global_memory:
             rag_context_blocks.append(user_global_memory)
+        if recent_prior_deliverables:
+            rag_context_blocks.append(
+                "[MOST RECENT CONVERSATION & IMMEDIATE PRECEDING DELIVERABLE (PRIMARY GROUNDING)]:\n"
+                f"{recent_prior_deliverables}\n"
+                "CRITICAL CONTINUITY MANDATE: The user's query is an immediate reply to this latest turn. Always address the user's question, doubt, or modification directly against this most recent output before referencing older history!"
+            )
         if rag_chunks:
             rag_context_blocks.append(
-                "[RETRIEVED PRECEDING DELIVERABLES & GROUND TRUTH (RAG RECOVERY)]:\n"
-                "The user is specifically referencing the following verified items/sections from earlier in the chat:\n"
+                "[HISTORICAL CHAT CONTEXT & EARLIER RELEVANT EXCERPTS (REFERENCE ONLY)]:\n"
                 f"{rag_chunks}\n"
-                "CRITICAL CONTINUITY MANDATE: Ground your revisions, answers, or extensions strictly on these exact retrieved items. DO NOT invent different items or hallucinate!"
-            )
-        elif recent_prior_deliverables:
-            rag_context_blocks.append(
-                "[RECENT DELIVERABLE FROM PRECEDING TURN]:\n"
-                f"{recent_prior_deliverables}\n"
-                "CRITICAL CONTINUITY MANDATE: Build upon, modify, or extend this verified preceding deliverable as requested by the user, while preserving all other accepted components."
+                "NOTE: These excerpts are historical background from earlier turns. Do NOT let older turns override the latest active conversation above."
             )
         rag_context = ("\n\n" + "\n\n".join(rag_context_blocks) + "\n\n") if rag_context_blocks else ""
 
@@ -866,18 +865,23 @@ if __name__ == "__main__":
         neg_rules = [c for c in avoidance_rules if any(k in c.lower() for k in ["exclusion", "not ", "dont", "do not", "never", "avoid", "no "])]
         neg_rules_text = ("\n\n[USER EXPLICIT EXCLUSIONS & NEGATIVE CONSTRAINTS (MANDATORY TO OBEY)]:\n" + "\n".join([f"- {r}" for r in neg_rules]) + "\nNEVER violate these negative instructions under any circumstances! For example, if asked for topics and told not day-wise, DO NOT use Day 1, Day 2... Organize by creative themes!\n") if neg_rules else ""
 
-        creative_planning_rules = (
-            "\n\nCRITICAL CREATIVE CONTENT & TOPICS RULES:\n"
-            "1. DURATION VS. COUNT DISAMBIGUATION:\n"
-            "   - If the user mentions a duration or series timeframe (e.g. 'series on it will be of 9 days', '15-30 sec clips', '10-day event') and requests 'different types of topics/themes' without day-wise breakdown:\n"
-            "   - DO NOT confuse duration (9 days) with topic count! Do NOT generate 9 padded topics unless explicitly requested.\n"
-            "   - Provide 4 to 6 strong, focused, non-repetitive thematic pillars/angles that cover the event beautifully.\n"
-            "2. GENUINE TOPICS VS. INTERNAL STRATEGY:\n"
-            "   - Every numbered topic MUST be an authentic viewer-facing video concept/title (e.g. 'Mata Ki Chunni: The Sacred Red Symbol of Shakti & Grace', 'Navratri Shringaar: Traditional Solah Shringaar & Spiritual Grace').\n"
-            "   - NEVER label internal creator rules or marketing instructions (such as 'Subtle Product Integration', 'Soft Selling Techniques', 'Community Greetings') as a numbered video topic!\n"
-            "   - Soft selling and product integration advice belongs in a dedicated 'Production & Subtle Marketing Strategy' section at the end.\n"
-            "3. UNIFIED DELIVERABLE:\n"
-            "   - Put EVERYTHING requested into this single, cohesive, self-contained response (thematic topics, content focus, production tips, soft selling advice, and a sample pilot starter script). The user wants one unified answer without needing to look into separate spaces!"
+        universal_deliverable_execution_rules = (
+            "\n\nUNIVERSAL DELIVERABLE EXECUTION & CONTINUITY PRINCIPLES (APPLY ACROSS ALL DOMAINS):\n"
+            "1. UNIVERSAL CARDINALITY & PARAMETER DISAMBIGUATION:\n"
+            "   - Distinguish domain context parameters, timeframes, durations, scopes, and measurements (e.g. '9 days', '30-day challenge', '12 weeks', '15-30 sec clips', '10-year horizon') from explicit target generation counts.\n"
+            "   - NEVER treat a timeline, duration, or domain measurement as the number of items/options to produce unless the user explicitly requests an exact count ('give me N items', 'list N ideas').\n"
+            "   - When asked for ideas, themes, modules, pillars, or topics without an explicit count, provide the optimal, comprehensive set suited to the scope (typically 3 to 6 distinct, well-rounded foundational pillars or modules). NEVER pad, duplicate, or hallucinate low-value items just to reach a contextual number mentioned in the prompt!\n"
+            "2. DELIVERABLE PURITY VS. OPERATIONAL GUIDANCE:\n"
+            "   - Every primary numbered item must be an authentic, viewer/user-facing deliverable of the requested type (e.g. actual concepts, modules, solutions, recipes, features).\n"
+            "   - Operational guidelines, internal creator rules, best practices, execution tips, and marketing/soft-selling advice must NEVER be disguised or numbered as primary items!\n"
+            "   - Place all operational recommendations, tips, and execution strategies into a dedicated, clearly titled guidance section at the end (e.g. '### Operational Strategy & Execution Guidelines').\n"
+            "3. UNIFIED ALL-IN-ONE DELIVERABLE:\n"
+            "   - Put EVERYTHING requested into this single, cohesive, self-contained response (core items, deep breakdowns, operational tips, and practical starter templates/samples). The user wants one unified answer without needing to look into separate spaces!\n"
+            "4. DIRECT CONVERSATIONAL INQUIRY, DOUBT & QUESTION RESOLUTION:\n"
+            "   - When the user asks a conceptual question, raises a doubt, or challenges a premise (e.g. 'how can we make multiple videos on one topic', 'why did you do X', 'isn't this missing Y', 'is this practical?'):\n"
+            "   - ANSWER THE USER'S QUESTION DIRECTLY AND THOROUGHLY! Provide clear strategic reasoning, creative angles, and practical answers resolving their specific doubt.\n"
+            "   - DO NOT ignore the question and blindly re-generate an entire item catalog from scratch!\n"
+            "   - Anchor your answer strictly on the immediately preceding conversation turn and deliverable."
         )
 
         prompt_text = (
@@ -887,7 +891,7 @@ if __name__ == "__main__":
             f"Overall Objective: {objective}{override_note}\n"
             f"{rag_context}"
             f"{neg_rules_text}"
-            f"{creative_planning_rules}"
+            f"{universal_deliverable_execution_rules}"
             f"{prior_context}\n"
             f"{attached_files_text}{secrecy_rule}{separate_file_rule}\n\n"
             "MULTI-AGENT COLLABORATION DIRECTIVE:\n"
@@ -1370,17 +1374,22 @@ if __name__ == "__main__":
             "  * Provide full, exact ingredient measurements and step-by-step cooking techniques for each option individually.\n"
             "  * NEVER instruct or advise the creator to cram all 3 recipes into a single video unless the user specifically asked for a combo platter video.\n"
             f"{secrecy_rule}{separate_file_rule}"
-            "\nCRITICAL CREATIVE CONTENT & TOPICS RULES:\n"
-            "1. DURATION VS. COUNT DISAMBIGUATION:\n"
-            "   - If the user mentions a duration or series timeframe (e.g. 'series on it will be of 9 days', '15-30 sec clips', '10-day event') and requests 'different types of topics/themes' without day-wise breakdown:\n"
-            "   - DO NOT confuse duration (9 days) with topic count! Do NOT generate 9 padded topics unless explicitly asked for 'exactly 9 topics'.\n"
-            "   - Provide 4 to 6 strong, focused, non-repetitive thematic pillars/angles that cover the event beautifully.\n"
-            "2. GENUINE TOPICS VS. INTERNAL STRATEGY:\n"
-            "   - Every numbered topic MUST be an authentic viewer-facing video concept/title (e.g. 'Mata Ki Chunni: The Sacred Red Symbol of Shakti & Grace', 'Navratri Shringaar: Traditional Solah Shringaar & Spiritual Grace').\n"
-            "   - NEVER label internal creator rules or marketing instructions (such as 'Subtle Product Integration', 'Soft Selling Techniques', 'Community Greetings') as a numbered video topic!\n"
-            "   - Soft selling and product integration advice belongs in a dedicated 'Production & Subtle Marketing Strategy' section at the end.\n"
-            "3. UNIFIED DELIVERABLE:\n"
-            "   - Put EVERYTHING requested into this single, cohesive, self-contained response (thematic topics, content focus, production tips, soft selling advice, and a sample pilot starter script). The user wants one unified answer without needing to look into separate spaces!"
+            "\nUNIVERSAL DELIVERABLE EXECUTION & CONTINUITY PRINCIPLES (APPLY ACROSS ALL DOMAINS):\n"
+            "1. UNIVERSAL CARDINALITY & PARAMETER DISAMBIGUATION:\n"
+            "   - Distinguish domain context parameters, timeframes, durations, scopes, and measurements (e.g. '9 days', '30-day challenge', '12 weeks', '15-30 sec clips', '10-year horizon') from explicit target generation counts.\n"
+            "   - NEVER treat a timeline, duration, or domain measurement as the number of items/options to produce unless the user explicitly requests an exact count ('give me N items', 'list N ideas').\n"
+            "   - When asked for ideas, themes, modules, pillars, or topics without an explicit count, provide the optimal, comprehensive set suited to the scope (typically 3 to 6 distinct, well-rounded foundational pillars or modules). NEVER pad, duplicate, or hallucinate low-value items just to reach a contextual number mentioned in the prompt!\n"
+            "2. DELIVERABLE PURITY VS. OPERATIONAL GUIDANCE:\n"
+            "   - Every primary numbered item must be an authentic, viewer/user-facing deliverable of the requested type (e.g. actual concepts, modules, solutions, recipes, features).\n"
+            "   - Operational guidelines, internal creator rules, best practices, execution tips, and marketing/soft-selling advice must NEVER be disguised or numbered as primary items!\n"
+            "   - Place all operational recommendations, tips, and execution strategies into a dedicated, clearly titled guidance section at the end (e.g. '### Operational Strategy & Execution Guidelines').\n"
+            "3. UNIFIED ALL-IN-ONE DELIVERABLE:\n"
+            "   - Put EVERYTHING requested into this single, cohesive, self-contained response (core items, deep breakdowns, operational tips, and practical starter templates/samples). The user wants one unified answer without needing to look into separate spaces!\n"
+            "4. DIRECT CONVERSATIONAL INQUIRY, DOUBT & QUESTION RESOLUTION:\n"
+            "   - When the user asks a conceptual question, raises a doubt, or challenges a premise (e.g. 'how can we make multiple videos on one topic', 'why did you do X', 'isn't this missing Y', 'is this practical?'):\n"
+            "   - ANSWER THE USER'S QUESTION DIRECTLY AND THOROUGHLY! Provide clear strategic reasoning, creative angles, and practical answers resolving their specific doubt.\n"
+            "   - DO NOT ignore the question and blindly re-generate an entire item catalog from scratch!\n"
+            "   - Anchor your answer strictly on the immediately preceding conversation turn and deliverable."
         )
         user_msg = (
             f"=== ASSIGNED MILESTONE: {task.title} ===\n"

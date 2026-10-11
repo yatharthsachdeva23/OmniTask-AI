@@ -107,25 +107,32 @@ class JSONStructurerAgent:
             "    - step_1: Visual Asset Generation for X (domain: 'vision', Worker: 'Flux.1 (Visual Asset Specialist)')\n"
             "    - step_2: Compose Evocative Poem for X (domain: 'audit', Worker: 'Gemini 2.0 Flash (Summarizer Specialist)', expected_output_type: 'poem_markdown')\n"
             "  * Only split into 2 to 4 sub-tasks when the user objective genuinely requires multiple distinct disciplines (e.g. 'research + description + thumbnail', 'music + video', 'code + diagram').\n"
-            "- USER NEGATIVE CONSTRAINTS & EXCLUSIONS MANDATE (CRITICAL):\n"
-            "  * If the user prompt specifies what NOT to do (e.g. 'dont give me any scripts of each day', 'dont give me day wise but diff topics', 'no astrology', 'no banana or patasa', 'do not make it primarily selling products', 'not some attire or recipe', 'do not reveal answer'):\n"
+            "- UNIVERSAL NEGATIVE CONSTRAINTS & EXCLUSIONS MANDATE (CRITICAL ACROSS ALL DOMAINS):\n"
+            "  * If the user prompt specifies what NOT to do, what to avoid, or negative restrictions (e.g. 'dont give me X', 'not day wise', 'no Y', 'strictly avoid Z', 'without external libraries', 'do not reveal answer'):\n"
             "  * You MUST extract EVERY negative exclusion into the 'constraints' array.\n"
             "  * In each sub-task's 'description', you MUST embed in ALL-CAPS: 'STRICT NEGATIVE EXCLUSIONS: [User exclusions]'.\n"
-            "  * NEVER allow downstream workers to violate user negative constraints (e.g. if the user says 'not day wise', the worker MUST group by creative thematic categories/angles rather than Day 1 to Day 9 calendar days!).\n"
-            "- DURATION VS. COUNT DISAMBIGUATION MANDATE:\n"
-            "  * When a user mentions a duration or series timeframe (e.g. 'series on it will be of 9 days', '9 days of Navratri', '15-30 sec clips', '10-day event') and asks for 'different types of topics/themes' without day-wise breakdown:\n"
-            "  * DO NOT confuse the duration (9 days) with the number of topics to produce! Unless the user explicitly says 'give me exactly 9 topics', DO NOT force 9 items.\n"
-            "  * Structure the subtask to produce 4 to 6 strong, focused, non-repetitive thematic pillars/angles that cover the festival beautifully.\n"
-            "  * NEVER pad or hallucinate artificial items just to reach a duration number!\n"
-            "- GENUINE TOPICS VS. INTERNAL STRATEGY MANDATE:\n"
-            "  * All suggested topics MUST be authentic viewer-facing concepts or video titles (e.g. 'Mata Ki Chunni: The Sacred Red Symbol of Shakti & Grace', 'Navratri Shringaar: Traditional Solah Shringaar & Spiritual Grace').\n"
-            "  * NEVER turn internal creator guidelines (such as 'Subtle Product Integration', 'Soft Selling Techniques', 'Community Greetings') into numbered video topics!\n"
-            "  * Internal strategy and subtle promotional advice must be placed under a dedicated 'Production & Subtle Marketing Strategy' section at the end, NOT as video topics!\n"
-            "- UNIFIED ALL-IN-ONE DELIVERABLE MANDATE:\n"
-            "  * Ensure the worker delivers all components (thematic topics, content focus, production tips, soft selling guidelines, and a sample pilot script) within a single unified markdown response so the user gets everything in one place.\n"
-            "- MULTI-TURN CHAT CONTINUITY & INCREMENTAL REFINEMENT DIRECTIVE:\n"
-            "  * If a [CONVERSATION CHAT HISTORY & PRECEDING DELIVERABLES] block is present in the objective, treat the user directive as an incremental modification, refinement, or continuation of the existing deliverables!\n"
-            "  * Build directly on existing deliverables without restarting blindly from scratch. For example, if the user asks to 'change question 3' or 'add 2 more questions' or 'export to Word document', structure sub-tasks specifically to make the requested revisions and compile the updated deliverables.\n\n"
+            "  * Downstream workers MUST NEVER violate user negative constraints under any circumstances.\n"
+            "- UNIVERSAL CARDINALITY & PARAMETER DISAMBIGUATION MANDATE (APPLIES TO ANY DOMAIN):\n"
+            "  * Distinguish domain context parameters, timelines, durations, or scopes (e.g. '9 days', '30-day challenge', '12 weeks', '15-30 sec clips', '10-year horizon', '100m sprint') from explicit target generation counts.\n"
+            "  * NEVER confuse a timeframe, duration, or domain measurement with the count of items/options to produce unless the user explicitly uses counting directives (e.g. 'give me exactly N items', 'list N options').\n"
+            "  * When asked for ideas, themes, modules, pillars, or topics without an explicit target count, structure the subtask to produce the optimal, comprehensive set suited to the scope (typically 3 to 6 distinct, well-rounded foundational pillars or modules). NEVER pad or hallucinate artificial items just to reach a duration or context number!\n"
+            "- UNIVERSAL DELIVERABLE PURITY & OPERATIONAL GUIDANCE MANDATE:\n"
+            "  * Primary deliverable items (e.g. topics, recipes, code modules, architectures, problems, features) MUST strictly represent authentic, viewer/user-facing deliverables.\n"
+            "  * Operational rules, internal creator guidelines, marketing advice, soft-selling techniques, and execution tips must NEVER be disguised or numbered as primary deliverable items!\n"
+            "  * All meta-advice, production tips, and operational strategies MUST be placed under a dedicated guidance section at the conclusion of the deliverable (e.g. '### Operational Strategy & Execution Guidelines').\n"
+            "- UNIVERSAL ALL-IN-ONE DELIVERABLE COMPLETION MANDATE:\n"
+            "  * Ensure the worker delivers all components (core items, in-depth breakdowns, operational tips, and practical starter templates/samples) within a single unified markdown response so the user gets everything in one place.\n"
+            "- UNIVERSAL MULTI-TURN INTENT RESOLUTION & RECENCY GROUNDING (CRITICAL ACROSS ALL DOMAINS):\n"
+            "  * If a [CONVERSATION CHAT HISTORY & PRECEDING DELIVERABLES] block is present:\n"
+            "    1. CONVERSATIONAL INQUIRY / DOUBT / QUESTION:\n"
+            "       If the user asks a conceptual question, raises a doubt, checks feasibility, asks 'how/why', or challenges a premise (e.g. 'how can we make multiple videos on one topic', 'why did you choose this approach', 'isn't this missing X', 'is this scalable'):\n"
+            "       - DO NOT structure this as a task to regenerate or restart the entire project or item catalog from scratch!\n"
+            "       - Structure this as 1 SINGLE SUB-TASK (domain: 'audit', Worker: 'Gemini 2.0 Flash (Summarizer Specialist)' or 'OpenAI GPT (Auditing Specialist)', expected_output_type: 'analytical_deliverable_markdown') dedicated to directly answering the user's question, explaining the strategic/technical rationale, and resolving their doubt using the immediate prior context.\n"
+            "    2. TARGETED MODIFICATION / CONTINUATION:\n"
+            "       If the user asks to modify, extend, or reformat a specific element (e.g. 'change item 2', 'add 2 more options', 'export to Word/PDF'):\n"
+            "       - Structure sub-tasks specifically to make the requested revisions and compile the updated deliverables while preserving all other accepted components.\n"
+            "    3. FRESH START:\n"
+            "       Only regenerate from scratch if the user explicitly instructs to start over or discard previous work.\n\n"
             "Each sub-task must have:\n"
             "- step_id: e.g. 'step_1', 'step_2'\n"
             "- title: specific descriptive title tailored to what is being executed\n"
@@ -206,12 +213,17 @@ class JSONStructurerAgent:
             "  * Only break a task into multiple sub-tasks IF genuinely required by distinct capabilities or disciplines (e.g. text generation vs. visual asset generation, code module vs. frontend HTML interface, analysis vs. binary document compilation).\n"
             "  * If a request is completely self-contained text with no document output (e.g. 'summarize this paragraph', 'write a short poem'), KEEP IT AS 1 SINGLE COHESIVE STEP.\n"
             "  * NEVER artificially split into redundant steps like 'extract questions', 'answer questions', 'preview layout', and 'deliver final document'.\n"
-            "- DURATION VS. COUNT DISAMBIGUATION MANDATE:\n"
-            "  * When the user mentions a duration or series timeframe (e.g. 'series of 9 days', '9 days of Navratri', '15-30 sec clips') and requests topics without day-wise breakdown, DO NOT force 9 topics! Provide 4 to 6 focused, distinct thematic angles.\n"
-            "- GENUINE TOPICS VS. INTERNAL STRATEGY MANDATE:\n"
-            "  * All topics MUST be authentic viewer-facing concepts. NEVER turn internal marketing guidelines (like 'Subtle Product Integration') into numbered video topics! Put promotional tips in a separate strategy section.\n"
-            "- UNIFIED ALL-IN-ONE DELIVERABLE MANDATE:\n"
-            "  * Ensure everything (topics, content focus, tips, subtle marketing guidance, and starter script) is delivered in a single unified response."
+            "- UNIVERSAL CARDINALITY & PARAMETER DISAMBIGUATION MANDATE (APPLIES TO ANY DOMAIN):\n"
+            "  * Distinguish domain context parameters, timelines, durations, or scopes (e.g. '9 days', '30-day challenge', '12 weeks', '15-30 sec clips', '10-year horizon') from explicit target generation counts.\n"
+            "  * NEVER confuse a timeframe or measurement with the count of items to produce unless the user explicitly asks for an exact count ('give me N items'). When no count is given, provide the optimal, comprehensive set (typically 3 to 6 distinct, well-rounded foundational pillars or modules).\n"
+            "- UNIVERSAL DELIVERABLE PURITY & OPERATIONAL GUIDANCE MANDATE:\n"
+            "  * All primary items MUST be authentic viewer/user-facing deliverables. NEVER turn internal guidelines or marketing advice into numbered deliverable items! Put operational and strategic advice into a dedicated guidance section at the end.\n"
+            "- UNIVERSAL ALL-IN-ONE DELIVERABLE COMPLETION MANDATE:\n"
+            "  * Ensure everything requested (core items, deep breakdowns, operational tips, and starter samples) is delivered in a single unified response.\n"
+            "- UNIVERSAL MULTI-TURN INTENT RESOLUTION & RECENCY GROUNDING:\n"
+            "  * When the user asks a conceptual question, raises a doubt, or asks for strategic/technical clarification (e.g. 'how can we do X', 'why did you pick Y', 'is this feasible'):\n"
+            "  * DO NOT structure this as a task to regenerate or restart the entire project or catalog from scratch!\n"
+            "  * Structure this as 1 SINGLE SUB-TASK (domain: 'audit') dedicated to directly answering the user's question, explaining the rationale, and resolving their doubt using the immediate prior context."
         )
         user_msg = (
             f"User Objective: \"{prompt}\"\n"
@@ -292,13 +304,21 @@ class JSONStructurerAgent:
 
     def _parse_json_to_goal(self, parsed: Dict[str, Any], prompt: str, files: List[IngestedFile]) -> StructuredGoal:
         primary_objective = parsed.get("primary_objective")
-        if not primary_objective:
-            if "[USER CURRENT DIRECTIVE / MODIFICATION REQUEST]:" in prompt:
-                primary_objective = prompt.split("[USER CURRENT DIRECTIVE / MODIFICATION REQUEST]:")[-1].strip()
-            elif "[USER FOLLOW-UP / MODIFICATION DIRECTIVE]:" in prompt:
-                primary_objective = prompt.split("[USER FOLLOW-UP / MODIFICATION DIRECTIVE]:")[-1].strip()
-            else:
-                primary_objective = prompt
+        user_current_directive = ""
+        if "[USER CURRENT DIRECTIVE / MODIFICATION REQUEST]:" in prompt:
+            user_current_directive = prompt.split("[USER CURRENT DIRECTIVE / MODIFICATION REQUEST]:")[-1].strip()
+        elif "[USER FOLLOW-UP / MODIFICATION DIRECTIVE]:" in prompt:
+            user_current_directive = prompt.split("[USER FOLLOW-UP / MODIFICATION DIRECTIVE]:")[-1].strip()
+
+        if user_current_directive:
+            is_question = any(q in user_current_directive.lower() for q in [
+                "isnt it", "isn't it", "how can we", "how do we", "how would", "why did", "why is",
+                "can we", "what if", "explain how", "clarify", "is it possible"
+            ]) or user_current_directive.strip().endswith("?")
+            if is_question or not primary_objective or len(primary_objective) > 150:
+                primary_objective = user_current_directive
+        elif not primary_objective:
+            primary_objective = prompt
         constraints = parsed.get("constraints", [
             "Must maintain strict execution integrity across sub-agents.",
             "All outputs must pass domain-specific quality reviews before commit."
@@ -314,16 +334,13 @@ class JSONStructurerAgent:
             if entry not in prereqs:
                 prereqs.append(entry)
 
-        # Extract any explicit negative directives from user prompt
+        # Extract any explicit negative directives from user prompt universally
         neg_phrases = []
         for segment in re.split(r'[,.\n;]+', prompt):
             seg_s = segment.strip()
-            if any(k in seg_s.lower() for k in [
-                "dont ", "don't ", "do not ", "never ", "no astrolog", "no stone", "no banana", "no patasa",
-                "not day wise", "not day-wise", "not day by day", "not daily", "without ", "strictly avoid",
-                "dont include", "don't include", "do not include", "not include", "not some attire", "not some recipe"
-            ]):
-                if len(seg_s) > 6:
+            # Catch any negative directive or exclusion pattern regardless of domain
+            if re.search(r'\b(dont|don\'t|do not|never|without|strictly avoid|avoid|exclude|excluding|omit|no\s+[a-z0-9_-]+|not\s+[a-z0-9_-]+)\b', seg_s, re.IGNORECASE):
+                if len(seg_s) > 5 and not any(seg_s.lower().startswith(fp) for fp in ["not only", "not just", "no problem", "no doubt"]):
                     neg_phrases.append(f"STRICT USER EXCLUSION: {seg_s}")
 
         for neg in neg_phrases:
@@ -457,6 +474,20 @@ class JSONStructurerAgent:
                     status=TaskStatus.PENDING
                 ))
 
+        # Conversational Q&A Safeguard: If user asks a question or expresses a doubt, ensure subtasks focus on directly answering it rather than blindly regenerating
+        if user_current_directive:
+            is_question = any(q in user_current_directive.lower() for q in [
+                "isnt it", "isn't it", "how can we", "how do we", "how would", "why did", "why is",
+                "can we really", "what if", "explain how", "clarify how", "is it possible to"
+            ]) or (user_current_directive.strip().endswith("?") and not any(gen in user_current_directive.lower() for gen in ["generate", "create", "build", "write me a", "make a", "draw", "render"]))
+            if is_question and len(sub_tasks) > 1:
+                first_task = sub_tasks[0]
+                first_task.title = f"Direct Strategic Explanation: {user_current_directive[:50]}"
+                first_task.domain = DomainType.AUDIT
+                first_task.description = f"Directly and thoroughly answer the user's question, doubt, or strategic inquiry: '{user_current_directive}'. Provide clear reasoning, practical solutions, and detailed explanations grounded in the preceding deliverable. Do NOT restart from scratch or regenerate a generic catalog."
+                first_task.expected_output_type = "analytical_deliverable_markdown"
+                sub_tasks = [first_task]
+
         if not sub_tasks:
             # Fallback if empty array returned
             return self._dynamic_semantic_structure(prompt, files)
@@ -484,8 +515,27 @@ class JSONStructurerAgent:
         subtasks: List[StructuredSubTask] = []
         step_idx = 1
 
+        # Check for Conversational Doubt / Strategy Inquiry / Direct Question
+        is_question_or_doubt = any(q in p_lower for q in [
+            "isnt it", "isn't it", "how can we", "how do we", "how would", "why did", "why is",
+            "can we really", "what if", "explain how", "clarify how", "is it possible to"
+        ]) or (p_lower.endswith("?") and not any(gen in p_lower for gen in ["generate", "create", "build", "write me a", "make a", "draw", "render"]))
+        if is_question_or_doubt:
+            subtasks.append(StructuredSubTask(
+                step_id=f"step_{step_idx}",
+                title=f"Direct Strategic Clarification & Resolution for '{user_directive[:45]}...'",
+                domain=DomainType.AUDIT,
+                description=f"Directly and thoughtfully answer the user's question, doubt, or strategic inquiry: '{user_directive}'. Provide clear reasoning, practical solutions, and detailed explanations grounded in the preceding deliverable. Do NOT restart from scratch or regenerate a generic catalog.",
+                assigned_worker_model="Gemini 2.0 Flash (Summarizer Specialist)",
+                assigned_reviewer_model="Gemini 2.0 Flash (Multimodal & Step QA Reviewer)",
+                required_prerequisites=["Immediate preceding deliverable and active conversation context"],
+                expected_output_type="analytical_deliverable_markdown",
+                status=TaskStatus.PENDING
+            ))
+            step_idx += 1
+
         # Check for Riddle / Guessing Game with Visual Output
-        has_riddle = any(w in p_lower for w in ["riddle", "guess", "puzzle", "pointers and we have to guess", "thinking of an image"])
+        has_riddle = not is_question_or_doubt and any(w in p_lower for w in ["riddle", "guess", "puzzle", "pointers and we have to guess", "thinking of an image"])
         wants_image = any(w in p_lower for w in ["image", "picture", "photo", "render", "draw"])
         if has_riddle and wants_image:
             subtasks.append(StructuredSubTask(
