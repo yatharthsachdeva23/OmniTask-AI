@@ -95,8 +95,8 @@ class FinalEvaluationAgent:
                     f"All {len(completed_outputs)} sub-tasks were structured via Jev System 1 routing, executed by specialized "
                     "worker models, rigorously vetted by domain-matched intermediate reviewers, and synchronized through the "
                     "Common Context Blackboard memory.\n\n"
-                    "✨ **Smart Mode Intelligence**: Omni has assembled anticipated blind spots, launch pitfalls, and a complimentary "
-                    "production starter pack to accelerate your implementation."
+                    "✨ **Smart Mode Intelligence**: All strategic recommendations, production tips, and deliverables "
+                    "have been synthesized directly into your unified response below."
                 )
             else:
                 summary_for_user = (

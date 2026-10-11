@@ -369,31 +369,7 @@ class AIAdvisorEngine:
                 ]
             }
         else:
-            return {
-                "pilot_starter_script": (
-                    "# Executive Strategic Briefing Matrix\n\n"
-                    "## 1. Executive Summary\n"
-                    "Concise 2-sentence distillation of the core objective and projected operational return.\n\n"
-                    "## 2. Problem Statement & Root Cause\n"
-                    "Clear diagnosis of the friction point, current benchmark, and target metric.\n\n"
-                    "## 3. Recommended Intervention Roadmap\n"
-                    "- Milestone 1: Baseline Architecture & Toolchain Alignment\n"
-                    "- Milestone 2: Pilot Implementation & Edge-Case Verification\n"
-                    "- Milestone 3: Full Deployment & Metric Tracking\n"
-                ),
-                "sensory_and_audio_formula": (
-                    "- Architecture: 1-Page Executive Summary, 3 Analytical Visuals, 1 Risk Appendix.\n"
-                    "- Formatting: High-contrast headings, bold primary takeaways, bulleted action items."
-                ),
-                "visual_style_and_thumbnail_prompt": (
-                    "Ideogram 2.0 Prompt: Modern minimalist executive presentation infographic poster, dark mode aesthetic, vibrant emerald accent bar charts, clean typography, 8k resolution."
-                ),
-                "retention_and_launch_checklist": [
-                    "Verify all baseline data inputs against secondary verification records.",
-                    "Establish unambiguous metric definitions before cross-functional distribution.",
-                    "Assign explicit SLA ownership to each milestone deliverable."
-                ]
-            }
+            return {}
 
     def _parse_to_advisor_response(self, user_query: str, parsed: Dict[str, Any], delivery_mode: str = "overdeliver") -> AdvisorResponse:
         """

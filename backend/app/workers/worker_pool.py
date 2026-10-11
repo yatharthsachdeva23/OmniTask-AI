@@ -866,6 +866,20 @@ if __name__ == "__main__":
         neg_rules = [c for c in avoidance_rules if any(k in c.lower() for k in ["exclusion", "not ", "dont", "do not", "never", "avoid", "no "])]
         neg_rules_text = ("\n\n[USER EXPLICIT EXCLUSIONS & NEGATIVE CONSTRAINTS (MANDATORY TO OBEY)]:\n" + "\n".join([f"- {r}" for r in neg_rules]) + "\nNEVER violate these negative instructions under any circumstances! For example, if asked for topics and told not day-wise, DO NOT use Day 1, Day 2... Organize by creative themes!\n") if neg_rules else ""
 
+        creative_planning_rules = (
+            "\n\nCRITICAL CREATIVE CONTENT & TOPICS RULES:\n"
+            "1. DURATION VS. COUNT DISAMBIGUATION:\n"
+            "   - If the user mentions a duration or series timeframe (e.g. 'series on it will be of 9 days', '15-30 sec clips', '10-day event') and requests 'different types of topics/themes' without day-wise breakdown:\n"
+            "   - DO NOT confuse duration (9 days) with topic count! Do NOT generate 9 padded topics unless explicitly requested.\n"
+            "   - Provide 4 to 6 strong, focused, non-repetitive thematic pillars/angles that cover the event beautifully.\n"
+            "2. GENUINE TOPICS VS. INTERNAL STRATEGY:\n"
+            "   - Every numbered topic MUST be an authentic viewer-facing video concept/title (e.g. 'Mata Ki Chunni: The Sacred Red Symbol of Shakti & Grace', 'Navratri Shringaar: Traditional Solah Shringaar & Spiritual Grace').\n"
+            "   - NEVER label internal creator rules or marketing instructions (such as 'Subtle Product Integration', 'Soft Selling Techniques', 'Community Greetings') as a numbered video topic!\n"
+            "   - Soft selling and product integration advice belongs in a dedicated 'Production & Subtle Marketing Strategy' section at the end.\n"
+            "3. UNIFIED DELIVERABLE:\n"
+            "   - Put EVERYTHING requested into this single, cohesive, self-contained response (thematic topics, content focus, production tips, soft selling advice, and a sample pilot starter script). The user wants one unified answer without needing to look into separate spaces!"
+        )
+
         prompt_text = (
             f"You are the Gemini Creative Content & Synthesis Specialist for OmniTask AI.\n"
             f"Task: {task.title}\n"
@@ -873,6 +887,7 @@ if __name__ == "__main__":
             f"Overall Objective: {objective}{override_note}\n"
             f"{rag_context}"
             f"{neg_rules_text}"
+            f"{creative_planning_rules}"
             f"{prior_context}\n"
             f"{attached_files_text}{secrecy_rule}{separate_file_rule}\n\n"
             "MULTI-AGENT COLLABORATION DIRECTIVE:\n"
@@ -1355,6 +1370,17 @@ if __name__ == "__main__":
             "  * Provide full, exact ingredient measurements and step-by-step cooking techniques for each option individually.\n"
             "  * NEVER instruct or advise the creator to cram all 3 recipes into a single video unless the user specifically asked for a combo platter video.\n"
             f"{secrecy_rule}{separate_file_rule}"
+            "\nCRITICAL CREATIVE CONTENT & TOPICS RULES:\n"
+            "1. DURATION VS. COUNT DISAMBIGUATION:\n"
+            "   - If the user mentions a duration or series timeframe (e.g. 'series on it will be of 9 days', '15-30 sec clips', '10-day event') and requests 'different types of topics/themes' without day-wise breakdown:\n"
+            "   - DO NOT confuse duration (9 days) with topic count! Do NOT generate 9 padded topics unless explicitly asked for 'exactly 9 topics'.\n"
+            "   - Provide 4 to 6 strong, focused, non-repetitive thematic pillars/angles that cover the event beautifully.\n"
+            "2. GENUINE TOPICS VS. INTERNAL STRATEGY:\n"
+            "   - Every numbered topic MUST be an authentic viewer-facing video concept/title (e.g. 'Mata Ki Chunni: The Sacred Red Symbol of Shakti & Grace', 'Navratri Shringaar: Traditional Solah Shringaar & Spiritual Grace').\n"
+            "   - NEVER label internal creator rules or marketing instructions (such as 'Subtle Product Integration', 'Soft Selling Techniques', 'Community Greetings') as a numbered video topic!\n"
+            "   - Soft selling and product integration advice belongs in a dedicated 'Production & Subtle Marketing Strategy' section at the end.\n"
+            "3. UNIFIED DELIVERABLE:\n"
+            "   - Put EVERYTHING requested into this single, cohesive, self-contained response (thematic topics, content focus, production tips, soft selling advice, and a sample pilot starter script). The user wants one unified answer without needing to look into separate spaces!"
         )
         user_msg = (
             f"=== ASSIGNED MILESTONE: {task.title} ===\n"
