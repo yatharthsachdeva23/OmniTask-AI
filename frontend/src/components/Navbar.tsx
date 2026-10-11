@@ -1,17 +1,19 @@
 import React, { useState } from 'react';
-import { Database, Compass, Zap, Info, BookOpen, Mail, HelpCircle, Home, Menu, X } from 'lucide-react';
+import { Database, Compass, Zap, Info, BookOpen, Mail, HelpCircle, Home, Menu, X, MessageSquare } from 'lucide-react';
 import { SampleNavModal, NavModalTab } from './SampleNavModal';
 
 interface NavbarProps {
   onOpenCatalog: () => void;
   onScrollTo: (sectionId: string) => void;
   activeSection?: string;
+  onOpenChats?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
   onOpenCatalog,
   onScrollTo,
   activeSection = 'hero',
+  onOpenChats,
 }) => {
   const [modalTab, setModalTab] = useState<NavModalTab | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -86,6 +88,16 @@ export const Navbar: React.FC<NavbarProps> = ({
               <Zap className="w-3.5 h-3.5" />
               <span>Worker Pool</span>
             </button>
+
+            {onOpenChats && (
+              <button
+                onClick={onOpenChats}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium text-neutral-400 hover:text-white hover:bg-white/[0.05] transition-all"
+              >
+                <MessageSquare className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Chats</span>
+              </button>
+            )}
 
             <div className="w-px h-4 bg-white/[0.1] mx-0.5"></div>
 
@@ -166,6 +178,18 @@ export const Navbar: React.FC<NavbarProps> = ({
               <Zap className="w-4 h-4" />
               <span>Autonomous Worker Pool</span>
             </button>
+            {onOpenChats && (
+              <button
+                onClick={() => {
+                  onOpenChats();
+                  setMobileMenuOpen(false);
+                }}
+                className="w-full flex items-center gap-2.5 px-3.5 py-2 rounded-lg text-xs font-medium text-left text-neutral-300 hover:text-white hover:bg-white/[0.06]"
+              >
+                <MessageSquare className="w-4 h-4 text-indigo-400" />
+                <span>Chat Workspace</span>
+              </button>
+            )}
             <div className="h-px bg-white/[0.08] my-2"></div>
             <button
               onClick={() => handleOpenInfo('about')}

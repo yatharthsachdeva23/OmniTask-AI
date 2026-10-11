@@ -162,3 +162,44 @@ export interface InteractivePlanResponse {
   clarifying_questions: PlanClarifyingQuestion[];
   suggested_focus?: string;
 }
+
+// Multi-turn Chat Interfaces
+export interface ChatExecutionData {
+  session_id: string;
+  stage?: string;
+  structured_goal?: StructuredGoal;
+  final_evaluation?: FinalEvaluationResult;
+  blackboard_state?: BlackboardSnapshot;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: number;
+  files?: IngestedFile[];
+  delivery_mode?: DeliveryMode;
+  clarifications?: Record<string, string>;
+  approved_plan_summary?: string;
+  execution_data?: ChatExecutionData;
+}
+
+export interface ChatSessionMeta {
+  id: string;
+  title: string;
+  created_at: number;
+  updated_at: number;
+  message_count: number;
+  preview: string;
+}
+
+export interface ChatSession {
+  id: string;
+  title: string;
+  created_at: number;
+  updated_at: number;
+  messages: ChatMessage[];
+  blackboard_state?: BlackboardSnapshot;
+  latest_evaluation?: FinalEvaluationResult;
+  delivery_mode: DeliveryMode;
+}

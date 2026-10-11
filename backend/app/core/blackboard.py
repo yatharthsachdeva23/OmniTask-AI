@@ -26,6 +26,8 @@ class CommonContextBlackboard:
         self.intermediate_reviews: Dict[str, IntermediateReviewResult] = {}
         self.negative_knowledge: List[NegativeKnowledgeItem] = []
         self.current_step_id: Optional[str] = None
+        self.chat_context_package: Optional[Dict[str, Any]] = None
+        self.user_global_memory: str = ""
         self.audit_trail: List[Dict[str, Any]] = []
         self._log_audit("INITIALIZE", f"Blackboard created for session {session_id}")
 
@@ -45,6 +47,52 @@ class CommonContextBlackboard:
             for f in files:
                 self.global_prerequisites.append(f"Ingested file: {f.filename} ({f.size_bytes} bytes)")
         self._log_audit("STRUCTURED_GOAL_SET", f"Structured goal with {len(goal.sub_tasks)} tasks initialized")
+
+    def load_prior_chat_state(self, prior_blackboard_dict: Optional[Dict[str, Any]] = None):
+        """
+        Rehydrates blackboard with outputs, handovers, and negative knowledge
+        from previous chat turns for 100% conversational multi-turn continuity.
+        """
+        if not prior_blackboard_dict:
+            return
+
+        # Rehydrate completed outputs
+        completed = prior_blackboard_dict.get("completed_outputs", {})
+        for step_id, out_data in completed.items():
+            if isinstance(out_data, dict) and step_id not in self.completed_outputs:
+                try:
+                    self.completed_outputs[step_id] = WorkerResult(**out_data)
+                except Exception:
+                    pass
+
+        # Rehydrate handovers
+        handovers = prior_blackboard_dict.get("inter_agent_handovers", {})
+        for step_id, h_data in handovers.items():
+            if isinstance(h_data, dict):
+                self.inter_agent_handovers[step_id] = h_data
+
+        # Rehydrate negative knowledge
+        neg_items = prior_blackboard_dict.get("negative_knowledge", [])
+        for item in neg_items:
+            if isinstance(item, dict):
+                try:
+                    self.negative_knowledge.append(NegativeKnowledgeItem(**item))
+                except Exception:
+                    pass
+
+        self._log_audit("CHAT_CONTINUITY_LOADED", f"Rehydrated {len(completed)} prior outputs from chat history")
+
+    def set_chat_context_package(self, package: Optional[Dict[str, Any]]):
+        """Attaches the RAG-retrieved and compressed chat memory package."""
+        self.chat_context_package = package
+        if package and package.get("has_prior_context"):
+            self._log_audit("CHAT_CONTEXT_ATTACHED", "Chat context package & RAG memory attached to blackboard")
+
+    def set_user_global_memory(self, memory_text: str):
+        """Attaches persistent Hermes user memory across all chats."""
+        self.user_global_memory = memory_text or ""
+        if self.user_global_memory:
+            self._log_audit("HERMES_MEMORY_ATTACHED", "Persistent cross-chat user memory attached to blackboard")
 
     def get_context_for_subagent(self, step_id: str) -> Dict[str, Any]:
         """
@@ -84,6 +132,7 @@ class CommonContextBlackboard:
 
         context_packet = {
             "session_id": self.session_id,
+            "original_user_prompt": self.original_prompt,
             "primary_objective": self.structured_goal.primary_objective if self.structured_goal else self.original_prompt,
             "constraints": self.structured_goal.constraints if self.structured_goal else [],
             "global_prerequisites": self.global_prerequisites,
@@ -91,6 +140,10 @@ class CommonContextBlackboard:
             "cumulative_prior_outputs": prior_knowledge,
             "cumulative_handovers": self.inter_agent_handovers,
             "negative_knowledge_avoidance_rules": avoidance_rules,
+            "user_global_memory": self.user_global_memory,
+            "retrieved_rag_chunks": self.chat_context_package.get("rag_excerpts_text", "") if self.chat_context_package else "",
+            "recent_prior_deliverables": self.chat_context_package.get("recent_deliverables_text", "") if self.chat_context_package else "",
+            "compressed_chat_memory": self.chat_context_package.get("compressed_memory_text", "") if self.chat_context_package else "",
             "ingested_files": [
                 {
                     "filename": f.filename,

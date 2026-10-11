@@ -143,6 +143,12 @@ export const App: React.FC = () => {
     );
   }
 
+  const handleOpenChats = () => {
+    setWorkerPrompt('');
+    setWorkerFiles([]);
+    setActiveView('worker-workspace');
+  };
+
   return (
     <div className="min-h-screen bg-black text-[#ededed] flex flex-col font-['Inter',sans-serif] relative selection:bg-white/20 selection:text-white">
       {/* Resend Top Ambient Lighting & Grid */}
@@ -154,6 +160,7 @@ export const App: React.FC = () => {
         onOpenCatalog={() => setIsCatalogOpen(true)}
         onScrollTo={scrollToSection}
         activeSection={activeSection}
+        onOpenChats={handleOpenChats}
       />
 
       {/* Main Single-Page Scroll Container */}

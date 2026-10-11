@@ -16,6 +16,9 @@ from app.workers.worker_pool import WorkerPool
 from app.reviewers.review_engine import IntermediateReviewEngine
 from app.core.evaluator import FinalEvaluationAgent
 from app.core.dynamic_replanner import DynamicSwarmReplanner
+from app.core.chat_manager import chat_manager
+from app.core.context_rag import ChatContextRAG
+from app.core.hermes_memory import hermes_memory
 
 class OmniOrchestrator:
     """
@@ -34,7 +37,55 @@ class OmniOrchestrator:
     async def execute_stream(self, request: TaskRequest) -> AsyncGenerator[str, None]:
         session_id = f"omni_{uuid.uuid4().hex[:8]}"
 
-        # Construct effective prompt including user-approved plan and clarifications
+        # Initialize or retrieve multi-turn Chat Session
+        chat_id = request.chat_id
+        chat_session = None
+        if chat_id:
+            chat_session = chat_manager.get_chat(chat_id)
+
+        if not chat_session:
+            chat_session = chat_manager.create_chat(
+                initial_prompt=request.prompt,
+                delivery_mode=request.delivery_mode or "smart"
+            )
+            chat_id = chat_session.id
+
+        # Record user message in the chat session
+        user_msg = chat_manager.add_user_message(
+            chat_id=chat_id,
+            content=request.prompt,
+            files=request.files,
+            delivery_mode=request.delivery_mode or "smart",
+            clarifications=request.user_clarifications,
+            approved_plan_summary=request.approved_plan_summary
+        )
+
+        yield self._format_sse("CHAT_SESSION_ASSIGNED", {
+            "chat_id": chat_id,
+            "session_id": session_id,
+            "title": chat_session.title,
+            "user_message": user_msg.model_dump()
+        })
+
+        # User identity & Dedicated Cross-Chat Hermes Memory
+        user_id = getattr(request, "user_id", "default_user") or "default_user"
+
+        # When a new chat starts, initiate autonomous consolidation across past chats
+        if len(chat_session.messages) <= 1:
+            try:
+                await hermes_memory.consolidate_from_all_chats(user_id=user_id)
+            except Exception as mem_err:
+                print(f"[Orchestrator] Hermes consolidation notice: {mem_err}")
+
+        user_memory_block = hermes_memory.format_memory_for_prompt(user_id)
+        if user_memory_block:
+            yield self._format_sse("USER_GLOBAL_MEMORY_APPLIED", {
+                "user_id": user_id,
+                "has_memory": True,
+                "message": "Loaded dedicated persistent memory: user profile & business context applied."
+            })
+
+        # Construct effective prompt including Hermes memory, user-approved plan, clarifications, and prior turns
         effective_prompt = request.prompt
         clarifications_list = []
         if request.user_clarifications:
@@ -48,13 +99,30 @@ class OmniOrchestrator:
         if request.approved_plan_summary:
             effective_prompt += f"\n\n[USER APPROVED ARCHITECTURE PLAN]:\n{request.approved_plan_summary}"
 
+        # Context Preservation & Chat Storage RAG across multi-turn chat sessions
+        context_rag = ChatContextRAG(chat_session)
+        context_package = context_rag.build_context_package(request.prompt)
+        if context_package.get("has_prior_context"):
+            effective_prompt = f"{context_package['formatted_context_block']}[USER CURRENT DIRECTIVE / MODIFICATION REQUEST]:\n{effective_prompt}"
+
+        # Prepend dedicated Hermes Memory as the foundational first block
+        if user_memory_block:
+            effective_prompt = f"{user_memory_block}\n\n{effective_prompt}"
+
         # --- STEP 1: PARSING & STRUCTURING ---
         yield self._format_sse("STAGE_CHANGE", {
             "stage": "STRUCTURING",
             "message": "JSON Structurer Agent normalizing prompt, preferences, and ingested assets...",
-            "session_id": session_id
+            "session_id": session_id,
+            "chat_id": chat_id
         })
         await asyncio.sleep(0.4)
+
+        if context_package.get("rag_excerpts_text"):
+            yield self._format_sse("CONTEXT_RAG_RETRIEVED", {
+                "chat_id": chat_id,
+                "message": "Retrieved verified excerpts from previous chat history via RAG to ground modifications."
+            })
 
         if request.user_clarifications:
             yield self._format_sse("USER_PREFERENCES_APPLIED", {
@@ -63,15 +131,27 @@ class OmniOrchestrator:
             })
 
         structured_goal = await self.structurer.structure_async(effective_prompt, request.files)
+        
+        # Intelligently update chat title with the clean extracted objective
+        if structured_goal and structured_goal.primary_objective:
+            clean_title = chat_manager.derive_title(request.prompt, structured_goal.primary_objective)
+            chat_manager.update_chat_title(chat_id, clean_title)
+            yield self._format_sse("CHAT_TITLE_UPDATED", {
+                "chat_id": chat_id,
+                "title": clean_title
+            })
+
         yield self._format_sse("STRUCTURING_COMPLETED", {
-            "structured_goal": structured_goal.model_dump()
+            "structured_goal": structured_goal.model_dump(),
+            "chat_id": chat_id
         })
 
         # --- STEP 2: JEV FAST SYSTEM 1 ROUTING ---
         yield self._format_sse("STAGE_CHANGE", {
             "stage": "JEV_ROUTING",
             "message": "Invoking Jev Fast System 1 Router for deterministic sub-task DAG classification...",
-            "session_id": session_id
+            "session_id": session_id,
+            "chat_id": chat_id
         })
         await asyncio.sleep(0.3)
 
@@ -79,11 +159,18 @@ class OmniOrchestrator:
         yield self._format_sse("JEV_ROUTING_COMPLETED", {
             "routed_plan": routed_plan.model_dump(),
             "latency_ms": routed_plan.jev_routing_latency_ms,
-            "confidence": routed_plan.jev_confidence
+            "confidence": routed_plan.jev_confidence,
+            "chat_id": chat_id
         })
 
         # --- STEP 3: INITIALIZE COMMON CONTEXT BLACKBOARD ---
         blackboard = CommonContextBlackboard(session_id, effective_prompt)
+        if user_memory_block:
+            blackboard.set_user_global_memory(user_memory_block)
+        if context_package.get("has_prior_context"):
+            blackboard.set_chat_context_package(context_package)
+        if chat_session.blackboard_state:
+            blackboard.load_prior_chat_state(chat_session.blackboard_state)
         blackboard.set_structured_goal(routed_plan, request.files)
 
         yield self._format_sse("BLACKBOARD_INITIALIZED", {
@@ -337,8 +424,75 @@ class OmniOrchestrator:
         except Exception as snap_err:
             print(f"[Orchestrator] Error saving session snapshot: {snap_err}")
 
+        # Extract complete substantive deliverable text from blackboard completed outputs
+        deliverable_texts = []
+        for step_id, out in blackboard.completed_outputs.items():
+            if out.output_text and out.output_text.strip():
+                from app.utils.handover_extractor import sanitize_display_output
+                clean_text = sanitize_display_output(out.output_text)
+                if clean_text:
+                    deliverable_texts.append(clean_text)
+
+        full_content = "\n\n---\n\n".join(deliverable_texts) if deliverable_texts else (evaluation.summary_for_user or "Verified deliverables generated successfully.")
+
+        # Auto-compile PDF deliverable if no PDF exists yet, so user has a clean PDF download option
+        try:
+            from app.utils.pdf_generator import markdown_to_pdf
+            has_pdf = any(out.artifacts.get("pdf_url") for out in blackboard.completed_outputs.values())
+            if not has_pdf and deliverable_texts and len(full_content) > 60:
+                combined_md = "\n\n".join(deliverable_texts)
+                clean_doc_title = (blackboard.structured_goal.primary_objective[:60] if blackboard.structured_goal else "Deliverables").strip()
+                pdf_url, pdf_path = markdown_to_pdf(combined_md, title=clean_doc_title)
+                last_step_id = list(blackboard.completed_outputs.keys())[-1]
+                blackboard.completed_outputs[last_step_id].artifacts["pdf_url"] = pdf_url
+                blackboard.completed_outputs[last_step_id].artifacts["filename"] = pdf_path.name
+                blackboard.completed_outputs[last_step_id].artifacts["pdf_filename"] = pdf_path.name
+                blackboard.completed_outputs[last_step_id].artifacts["has_pdf"] = True
+                blackboard.completed_outputs[last_step_id].artifacts["file_size_bytes"] = pdf_path.stat().st_size
+        except Exception as pdf_auto_err:
+            print(f"[Orchestrator] Auto-PDF compilation notice: {pdf_auto_err}")
+
+        # Assemble execution data snapshot for chat turn
+        execution_data = {
+            "session_id": session_id,
+            "stage": "COMPLETED",
+            "structured_goal": blackboard.structured_goal.model_dump() if blackboard.structured_goal else None,
+            "final_evaluation": evaluation.model_dump(),
+            "blackboard_state": blackboard.get_state().model_dump()
+        }
+
+        asst_msg = chat_manager.add_assistant_message(
+            chat_id=chat_id,
+            content=full_content,
+            execution_data=execution_data,
+            blackboard_state=blackboard.get_state().model_dump(),
+            latest_evaluation=evaluation.model_dump()
+        )
+
+        # Incrementally update Hermes Memory if user disclosed persistent business/identity/rules
+        try:
+            updated_mem = hermes_memory.inspect_and_update_from_message(
+                user_id=user_id,
+                user_prompt=request.prompt,
+                assistant_response=full_content,
+                chat_id=chat_id
+            )
+            if updated_mem:
+                yield self._format_sse("USER_GLOBAL_MEMORY_UPDATED", {
+                    "user_id": user_id,
+                    "message": "Hermes Memory self-updated: new durable facts preserved for future chats."
+                })
+        except Exception as mem_up_err:
+            print(f"[Orchestrator] Incremental memory update notice: {mem_up_err}")
+
+        yield self._format_sse("CHAT_MESSAGE_COMPLETED", {
+            "chat_id": chat_id,
+            "message": asst_msg.model_dump()
+        })
+
         yield self._format_sse("EXECUTION_COMPLETED", {
             "session_id": session_id,
+            "chat_id": chat_id,
             "final_evaluation": evaluation.model_dump(),
             "full_blackboard_state": blackboard.get_state().model_dump()
         })

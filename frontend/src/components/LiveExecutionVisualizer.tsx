@@ -687,6 +687,17 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
                                     </button>
                                   )}
                                 </>
+                              ) : fileInfo.extension.toLowerCase() === 'md' ? (
+                                (output.artifacts?.pdf_url || fileInfo.pdfUrl) ? (
+                                  <button
+                                    onClick={() => handleDownload(fileInfo, output.artifacts?.pdf_url || fileInfo.pdfUrl, output.artifacts?.pdf_filename || output.artifacts?.filename || `${fileInfo.filename.replace(/\.md$/, '')}.pdf`)}
+                                    className="flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-red-600/30 hover:bg-red-600/50 text-red-200 hover:text-white transition text-[11px] font-mono border border-red-500/40"
+                                    title="Download as PDF Document"
+                                  >
+                                    <Download className="w-3 h-3 text-red-300" />
+                                    <span>Download (PDF)</span>
+                                  </button>
+                                ) : null
                               ) : (
                                 <button
                                   onClick={() => handleDownload(fileInfo)}
@@ -1226,6 +1237,17 @@ export const LiveExecutionVisualizer: React.FC<LiveExecutionVisualizerProps> = (
                               </button>
                             )}
                           </>
+                        ) : fileInfo.extension.toLowerCase() === 'md' ? (
+                          (del.artifacts?.pdf_url || fileInfo.pdfUrl) ? (
+                            <button
+                              onClick={() => handleDownload(fileInfo, del.artifacts?.pdf_url || fileInfo.pdfUrl, del.artifacts?.pdf_filename || del.artifacts?.filename || `${fileInfo.filename.replace(/\.md$/, '')}.pdf`)}
+                              className="flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-red-600/30 hover:bg-red-600/50 text-red-200 hover:text-white transition text-[11px] font-mono border border-red-500/40"
+                              title="Download as PDF Document"
+                            >
+                              <Download className="w-3 h-3 text-red-300" />
+                              <span>Download (PDF)</span>
+                            </button>
+                          ) : null
                         ) : (
                           <button
                             onClick={() => handleDownload(fileInfo)}

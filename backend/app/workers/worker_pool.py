@@ -310,6 +310,28 @@ class WorkerPool:
             dynamic_note = f"\n[DYNAMIC SWARM SPECIALIST INJECTION]: {dynamic_reason}\n"
             objective = f"{objective}\n{dynamic_note}"
 
+        # Context Preservation & RAG Excerpts from Blackboard
+        user_global_memory = blackboard_context.get("user_global_memory", "")
+        rag_chunks = blackboard_context.get("retrieved_rag_chunks", "")
+        recent_prior_deliverables = blackboard_context.get("recent_prior_deliverables", "")
+        rag_context_blocks = []
+        if user_global_memory:
+            rag_context_blocks.append(user_global_memory)
+        if rag_chunks:
+            rag_context_blocks.append(
+                "[RETRIEVED PRECEDING DELIVERABLES & GROUND TRUTH (RAG RECOVERY)]:\n"
+                "The user is specifically referencing the following verified items/sections from earlier in the chat:\n"
+                f"{rag_chunks}\n"
+                "CRITICAL CONTINUITY MANDATE: Ground your revisions, answers, or extensions strictly on these exact retrieved items. DO NOT invent different items or hallucinate!"
+            )
+        elif recent_prior_deliverables:
+            rag_context_blocks.append(
+                "[RECENT DELIVERABLE FROM PRECEDING TURN]:\n"
+                f"{recent_prior_deliverables}\n"
+                "CRITICAL CONTINUITY MANDATE: Build upon, modify, or extend this verified preceding deliverable as requested by the user, while preserving all other accepted components."
+            )
+        rag_context = ("\n\n" + "\n\n".join(rag_context_blocks) + "\n\n") if rag_context_blocks else ""
+
         # Route to specialist sub-agent with full Common Context Blackboard continuity
         is_creative_writing = any(w in task.title.lower() or w in task.description.lower() for w in ["poem", "poetry", "rhyme", "sonnet", "ballad", "creative story", "lyrics", "haiku"])
         is_answering_step = any(w in task.title.lower() for w in ["question answering", "answer questions", "answering & solutions", "answering and solutions", "extract and answer"])
@@ -330,15 +352,15 @@ class WorkerPool:
         if is_document_specialist:
             result = await self._run_pdf_compiler(task, objective, prior_outputs, cumulative_handovers, override_prompt)
         elif is_quiz_task:
-            result = await self._run_openai_auditor(task, objective, prior_outputs, avoidance_rules, attached_files_text, cumulative_handovers, override_prompt)
+            result = await self._run_openai_auditor(task, objective, prior_outputs, avoidance_rules, attached_files_text, cumulative_handovers, override_prompt, rag_context)
         elif is_creative_writing:
-            result = await self._run_gemini_summarizer(task, objective, prior_outputs, avoidance_rules, attached_files_text, cumulative_handovers, override_prompt)
+            result = await self._run_gemini_summarizer(task, objective, prior_outputs, avoidance_rules, attached_files_text, cumulative_handovers, override_prompt, rag_context)
         elif domain == DomainType.CODE or "qwen" in assigned_model.lower():
-            result = await self._run_qwen_coder(task, objective, prior_outputs, avoidance_rules, attached_files_text, cumulative_handovers, override_prompt)
+            result = await self._run_qwen_coder(task, objective, prior_outputs, avoidance_rules, attached_files_text, cumulative_handovers, override_prompt, rag_context)
         elif "summary" in task.title.lower() or "gemini" in assigned_model.lower():
-            result = await self._run_gemini_summarizer(task, objective, prior_outputs, avoidance_rules, attached_files_text, cumulative_handovers, override_prompt)
+            result = await self._run_gemini_summarizer(task, objective, prior_outputs, avoidance_rules, attached_files_text, cumulative_handovers, override_prompt, rag_context)
         elif domain in [DomainType.MATH, "legal_logic"] or "mistral" in assigned_model.lower():
-            result = await self._run_mistral_logic(task, objective, prior_outputs, avoidance_rules, attached_files_text, cumulative_handovers, override_prompt)
+            result = await self._run_mistral_logic(task, objective, prior_outputs, avoidance_rules, attached_files_text, cumulative_handovers, override_prompt, rag_context)
         elif domain == DomainType.VISION or "flux" in assigned_model.lower():
             result = await self._run_flux_visual(task, objective, prior_outputs, avoidance_rules, cumulative_handovers, override_prompt)
         elif domain == DomainType.AUDIO or any(w in assigned_model.lower() for w in ["musicgen", "suno", "audio"]):
@@ -346,9 +368,9 @@ class WorkerPool:
         elif domain == DomainType.VIDEO or any(w in assigned_model.lower() for w in ["kling", "cogvideo", "video"]):
             result = await self._run_video_generator(task, objective, prior_outputs, avoidance_rules, cumulative_handovers, override_prompt)
         elif "openai" in assigned_model.lower() or domain == DomainType.AUDIT:
-            result = await self._run_openai_auditor(task, objective, prior_outputs, avoidance_rules, attached_files_text, cumulative_handovers, override_prompt)
+            result = await self._run_openai_auditor(task, objective, prior_outputs, avoidance_rules, attached_files_text, cumulative_handovers, override_prompt, rag_context)
         else:
-            result = await self._run_gemini_summarizer(task, objective, prior_outputs, avoidance_rules, attached_files_text, cumulative_handovers, override_prompt)
+            result = await self._run_gemini_summarizer(task, objective, prior_outputs, avoidance_rules, attached_files_text, cumulative_handovers, override_prompt, rag_context)
 
         elapsed_ms = (time.perf_counter() - start_time) * 1000
         result.execution_time_ms = round(elapsed_ms + 180.0, 1)
@@ -465,7 +487,7 @@ class WorkerPool:
         return result
 
     # 1. CODING SPECIALIST: Qwen 2.5 Coder (Groq -> Gemini -> OpenRouter -> Dynamic Generator)
-    async def _run_qwen_coder(self, task, objective, prior_outputs, avoidance_rules, attached_files_text="", cumulative_handovers=None, override_prompt=None) -> WorkerResult:
+    async def _run_qwen_coder(self, task, objective, prior_outputs, avoidance_rules, attached_files_text="", cumulative_handovers=None, override_prompt=None, rag_context="") -> WorkerResult:
         prior_context = format_blackboard_prior_knowledge(prior_outputs, cumulative_handovers)
         override_note = f"\n\n[REVIEWER CORRECTION PROMPT]:\n{override_prompt}\n" if override_prompt else ""
         system_prompt = (
@@ -487,7 +509,9 @@ class WorkerPool:
         user_msg = (
             f"Task: {task.title}\n"
             f"Description: {task.description}\n"
-            f"Objective: {objective}{override_note}{attached_files_text}{prior_context}\n\n"
+            f"Objective: {objective}{override_note}\n\n"
+            f"{rag_context}"
+            f"{attached_files_text}{prior_context}\n\n"
             "Deliver the complete, standalone code implementation directly in markdown code blocks."
         )
 
@@ -797,7 +821,7 @@ if __name__ == "__main__":
         )
 
     # 2. SUMMARIZER SPECIALIST: Gemini 2.0 Flash (Gemini -> Groq -> OpenRouter -> Dynamic Synthesizer)
-    async def _run_gemini_summarizer(self, task, objective, prior_outputs, avoidance_rules, attached_files_text="", cumulative_handovers=None, override_prompt=None) -> WorkerResult:
+    async def _run_gemini_summarizer(self, task, objective, prior_outputs, avoidance_rules, attached_files_text="", cumulative_handovers=None, override_prompt=None, rag_context="") -> WorkerResult:
         prior_context = format_blackboard_prior_knowledge(prior_outputs, cumulative_handovers)
         override_note = f"\n\n[REVIEWER CORRECTION PROMPT]:\n{override_prompt}\n" if override_prompt else ""
         is_secrecy = any(w in objective.lower() for w in [
@@ -839,9 +863,16 @@ if __name__ == "__main__":
                 "- NEVER write 'Prepared by OmniTask AI' or artificial branding in either document."
             )
 
+        neg_rules = [c for c in avoidance_rules if any(k in c.lower() for k in ["exclusion", "not ", "dont", "do not", "never", "avoid", "no "])]
+        neg_rules_text = ("\n\n[USER EXPLICIT EXCLUSIONS & NEGATIVE CONSTRAINTS (MANDATORY TO OBEY)]:\n" + "\n".join([f"- {r}" for r in neg_rules]) + "\nNEVER violate these negative instructions under any circumstances! For example, if asked for topics and told not day-wise, DO NOT use Day 1, Day 2... Organize by creative themes!\n") if neg_rules else ""
+
         prompt_text = (
-            f"You are the Gemini Summarizer & Creative Specialist for OmniTask AI.\n"
-            f"Task: {task.title}\nObjective: {objective}{override_note}\n"
+            f"You are the Gemini Creative Content & Synthesis Specialist for OmniTask AI.\n"
+            f"Task: {task.title}\n"
+            f"Task Specific Directive: {task.description}\n"
+            f"Overall Objective: {objective}{override_note}\n"
+            f"{rag_context}"
+            f"{neg_rules_text}"
             f"{prior_context}\n"
             f"{attached_files_text}{secrecy_rule}{separate_file_rule}\n\n"
             "MULTI-AGENT COLLABORATION DIRECTIVE:\n"
@@ -933,10 +964,10 @@ if __name__ == "__main__":
         )
 
     # 3. LOGIC & MATH SPECIALIST: Mistral (OpenRouter -> Gemini -> Groq -> Dynamic Derivation)
-    async def _run_mistral_logic(self, task, objective, prior_outputs, avoidance_rules, attached_files_text="", cumulative_handovers=None, override_prompt=None) -> WorkerResult:
+    async def _run_mistral_logic(self, task, objective, prior_outputs, avoidance_rules, attached_files_text="", cumulative_handovers=None, override_prompt=None, rag_context="") -> WorkerResult:
         prior_context = format_blackboard_prior_knowledge(prior_outputs, cumulative_handovers)
         override_note = f"\n\n[REVIEWER CORRECTION PROMPT]:\n{override_prompt}\n" if override_prompt else ""
-        user_msg = f"Task: {task.title}\nDescription: {task.description}\nObjective: {objective}{override_note}{attached_files_text}{prior_context}"
+        user_msg = f"Task: {task.title}\nDescription: {task.description}\nObjective: {objective}{override_note}\n\n{rag_context}{attached_files_text}{prior_context}"
         sys_msg = (
             "You are the Mistral Legal & Formal Logic Specialist for OmniTask AI. Evaluate regulatory constraints, deductive validity, and mathematical derivations.\n"
             "MULTI-AGENT CONTINUITY DIRECTIVE:\n"
@@ -1254,7 +1285,7 @@ if __name__ == "__main__":
         )
 
     # 4. AUDITOR & EXAM/DOCUMENT SPECIALIST: OpenAI GPT (OpenRouter -> Gemini -> Groq -> Dynamic Auditor)
-    async def _run_openai_auditor(self, task, objective, prior_outputs, avoidance_rules, attached_files_text="", cumulative_handovers=None, override_prompt=None) -> WorkerResult:
+    async def _run_openai_auditor(self, task, objective, prior_outputs, avoidance_rules, attached_files_text="", cumulative_handovers=None, override_prompt=None, rag_context="") -> WorkerResult:
         prior_context = format_blackboard_prior_knowledge(prior_outputs, cumulative_handovers)
         override_note = f"\n\n[REVIEWER CORRECTION PROMPT]:\n{override_prompt}\n" if override_prompt else ""
         is_secrecy = any(w in objective.lower() for w in [
@@ -1269,7 +1300,7 @@ if __name__ == "__main__":
                 "- The user requested a riddle, puzzle, or math calculation sequence where the answer must NOT be revealed in the chat or text.\n"
                 "- You MUST NOT write, state, or hint at the final number or answer in your visible output text under any circumstances!\n"
                 "- HOWEVER, YOU MUST INTERNALLY COMPUTE AND SOLVE THE EXACT FINAL ANSWER (for example, if the 6 calculations reduce to 9, the answer is 9).\n"
-                "- You MUST pass this exact calculated answer and visual asset description inside <agent_handover> at the very end of your response:\n"
+                "- You MUST pass this exact calculated answer and visual asset description inside <agent_handover> at the very end OF your response:\n"
                 "  <agent_handover>{\n"
                 '    "target_subject": "cinematic 3D render of the number 9",\n'
                 '    "secret_answer": "9",\n'
@@ -1301,9 +1332,13 @@ if __name__ == "__main__":
                 "- NEVER write 'Prepared by OmniTask AI' or artificial branding in either document."
             )
 
+        neg_rules = [c for c in avoidance_rules if any(k in c.lower() for k in ["exclusion", "not ", "dont", "do not", "never", "avoid", "no "])]
+        neg_rules_sys = ("\n\nCRITICAL USER NEGATIVE EXCLUSIONS (MANDATORY TO OBEY):\n" + "\n".join([f"- {r}" for r in neg_rules]) + "\nNEVER violate these user exclusions under any circumstances! If asked for topics and told not day-wise, do NOT use Day 1, Day 2... Organize by creative themes!\n") if neg_rules else ""
+
         system_content = (
             "You are the OpenAI GPT Specialist for OmniTask AI.\n"
             "Fulfill the user's task with rigor and high fidelity.\n"
+            f"{neg_rules_sys}"
             "CRITICAL MILESTONE BOUNDARY PROTOCOL:\n"
             "- You are specifically assigned to execute this milestone action directive.\n"
             "- Focus exclusively on your assigned milestone. Do NOT pre-empt downstream milestones or summarize deliverables belonging to other agents.\n"
@@ -1326,9 +1361,11 @@ if __name__ == "__main__":
             f"EXACT ACTION DIRECTIVE: {task.description}\n"
             f"EXPECTED DELIVERABLE TYPE: {task.expected_output_type}\n\n"
             f"OVERALL PROJECT CONTEXT (For Background Reference Only): \"{objective}\"{override_note}\n\n"
+            f"{rag_context}"
             f"CRITICAL BOUNDARY INSTRUCTIONS:\n"
             f"- Fulfill your specific milestone directive: \"{task.description}\" with 100% completeness and rigor.\n"
             f"- DO NOT wander outside this milestone or execute future tasks belonging to other agents.\n"
+            f"- If modifying or continuing a previous deliverable, apply the user's modifications precisely while preserving all other accepted components.\n"
             f"- If answering questions from the attached materials, provide complete, full-length answers to ALL questions.\n\n"
             f"{attached_files_text}\n"
             f"{separate_file_rule}\n"

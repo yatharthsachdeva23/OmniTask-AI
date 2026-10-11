@@ -39,6 +39,8 @@ class TaskRequest(BaseModel):
     ask_before_doing: bool = True
     user_clarifications: Optional[Dict[str, str]] = None
     approved_plan_summary: Optional[str] = None
+    chat_id: Optional[str] = None
+    user_id: Optional[str] = "default_user"
 
 class StructuredSubTask(BaseModel):
     step_id: str
@@ -168,3 +170,40 @@ class InteractivePlanResponse(BaseModel):
     steps: List[ImplementationStepPlan] = Field(default_factory=list)
     clarifying_questions: List[PlanClarifyingQuestion] = Field(default_factory=list)
     suggested_focus: str = ""
+
+# ==========================================
+# Multi-Turn Chat & Conversation History Models
+# ==========================================
+class ChatMessage(BaseModel):
+    id: str
+    role: str  # "user" | "assistant"
+    content: str
+    timestamp: float
+    files: List[IngestedFile] = Field(default_factory=list)
+    delivery_mode: Optional[str] = "smart"
+    clarifications: Optional[Dict[str, str]] = None
+    approved_plan_summary: Optional[str] = None
+    execution_data: Optional[Dict[str, Any]] = None  # Contains stage, subtasks, worker results, deliverables, blackboard
+
+class ChatSessionMeta(BaseModel):
+    id: str
+    title: str
+    created_at: float
+    updated_at: float
+    message_count: int = 0
+    preview: str = ""
+
+class ChatSession(BaseModel):
+    id: str
+    title: str
+    created_at: float
+    updated_at: float
+    messages: List[ChatMessage] = Field(default_factory=list)
+    blackboard_state: Optional[Dict[str, Any]] = None
+    latest_evaluation: Optional[Dict[str, Any]] = None
+    delivery_mode: str = "smart"
+    user_id: Optional[str] = "default_user"
+
+class ChatUpdateRequest(BaseModel):
+    title: Optional[str] = None
+

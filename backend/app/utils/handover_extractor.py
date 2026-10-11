@@ -148,3 +148,10 @@ def extract_and_sanitize_handover(
     clean_text = re.sub(r"\n{3,}", "\n\n", text).strip()
 
     return clean_text, handover
+
+def sanitize_display_output(text: str) -> str:
+    """Helper to sanitize output and strip internal coordination tags for clean document compilation."""
+    if not text:
+        return ""
+    clean, _ = extract_and_sanitize_handover(text)
+    return clean

@@ -106,7 +106,15 @@ class JSONStructurerAgent:
             "  * For compound requests like 'make an image of X and write a poem on it':\n"
             "    - step_1: Visual Asset Generation for X (domain: 'vision', Worker: 'Flux.1 (Visual Asset Specialist)')\n"
             "    - step_2: Compose Evocative Poem for X (domain: 'audit', Worker: 'Gemini 2.0 Flash (Summarizer Specialist)', expected_output_type: 'poem_markdown')\n"
-            "  * Only split into 2 to 4 sub-tasks when the user objective genuinely requires multiple distinct disciplines (e.g. 'research + description + thumbnail', 'music + video', 'code + diagram').\n\n"
+            "  * Only split into 2 to 4 sub-tasks when the user objective genuinely requires multiple distinct disciplines (e.g. 'research + description + thumbnail', 'music + video', 'code + diagram').\n"
+            "- USER NEGATIVE CONSTRAINTS & EXCLUSIONS MANDATE (CRITICAL):\n"
+            "  * If the user prompt specifies what NOT to do (e.g. 'dont give me any scripts of each day', 'dont give me day wise but diff topics', 'no astrology', 'no banana or patasa', 'do not make it primarily selling products', 'not some attire or recipe', 'do not reveal answer'):\n"
+            "  * You MUST extract EVERY negative exclusion into the 'constraints' array.\n"
+            "  * In each sub-task's 'description', you MUST embed in ALL-CAPS: 'STRICT NEGATIVE EXCLUSIONS: [User exclusions]'.\n"
+            "  * NEVER allow downstream workers to violate user negative constraints (e.g. if the user says 'not day wise', the worker MUST group by creative thematic categories/angles rather than Day 1 to Day 9 calendar days!).\n"
+            "- MULTI-TURN CHAT CONTINUITY & INCREMENTAL REFINEMENT DIRECTIVE:\n"
+            "  * If a [CONVERSATION CHAT HISTORY & PRECEDING DELIVERABLES] block is present in the objective, treat the user directive as an incremental modification, refinement, or continuation of the existing deliverables!\n"
+            "  * Build directly on existing deliverables without restarting blindly from scratch. For example, if the user asks to 'change question 3' or 'add 2 more questions' or 'export to Word document', structure sub-tasks specifically to make the requested revisions and compile the updated deliverables.\n\n"
             "Each sub-task must have:\n"
             "- step_id: e.g. 'step_1', 'step_2'\n"
             "- title: specific descriptive title tailored to what is being executed\n"
@@ -266,7 +274,14 @@ class JSONStructurerAgent:
         return domain
 
     def _parse_json_to_goal(self, parsed: Dict[str, Any], prompt: str, files: List[IngestedFile]) -> StructuredGoal:
-        primary_objective = parsed.get("primary_objective") or prompt
+        primary_objective = parsed.get("primary_objective")
+        if not primary_objective:
+            if "[USER CURRENT DIRECTIVE / MODIFICATION REQUEST]:" in prompt:
+                primary_objective = prompt.split("[USER CURRENT DIRECTIVE / MODIFICATION REQUEST]:")[-1].strip()
+            elif "[USER FOLLOW-UP / MODIFICATION DIRECTIVE]:" in prompt:
+                primary_objective = prompt.split("[USER FOLLOW-UP / MODIFICATION DIRECTIVE]:")[-1].strip()
+            else:
+                primary_objective = prompt
         constraints = parsed.get("constraints", [
             "Must maintain strict execution integrity across sub-agents.",
             "All outputs must pass domain-specific quality reviews before commit."
@@ -282,6 +297,22 @@ class JSONStructurerAgent:
             if entry not in prereqs:
                 prereqs.append(entry)
 
+        # Extract any explicit negative directives from user prompt
+        neg_phrases = []
+        for segment in re.split(r'[,.\n;]+', prompt):
+            seg_s = segment.strip()
+            if any(k in seg_s.lower() for k in [
+                "dont ", "don't ", "do not ", "never ", "no astrolog", "no stone", "no banana", "no patasa",
+                "not day wise", "not day-wise", "not day by day", "not daily", "without ", "strictly avoid",
+                "dont include", "don't include", "do not include", "not include", "not some attire", "not some recipe"
+            ]):
+                if len(seg_s) > 6:
+                    neg_phrases.append(f"STRICT USER EXCLUSION: {seg_s}")
+
+        for neg in neg_phrases:
+            if neg not in constraints:
+                constraints.append(neg)
+
         raw_tasks = parsed.get("sub_tasks", [])
         sub_tasks: List[StructuredSubTask] = []
         for idx, t in enumerate(raw_tasks):
@@ -296,6 +327,8 @@ class JSONStructurerAgent:
             step_id = t.get("step_id") or f"step_{idx + 1}"
             title = t.get("title") or f"Sub-Task {idx + 1}"
             desc = t.get("description") or f"Execute milestone {idx + 1} for: {prompt[:80]}"
+            if neg_phrases:
+                desc = f"{desc}\n\n[MANDATORY USER NEGATIVE CONSTRAINTS (STRICTLY OBEY)]:\n" + "\n".join([f"- {np}" for np in neg_phrases])
             req_prereqs = t.get("required_prerequisites", [f"step_{idx}"] if idx > 0 else ["User input"])
             if not isinstance(req_prereqs, list):
                 req_prereqs = [str(req_prereqs)]
@@ -425,7 +458,12 @@ class JSONStructurerAgent:
         Dynamic fallback engine deriving custom subtasks based on semantic intent and attached files.
         Contains ZERO hardcoded test snippets or fixed formulas.
         """
-        p_lower = prompt.lower()
+        user_directive = prompt
+        if "[USER CURRENT DIRECTIVE / MODIFICATION REQUEST]:" in prompt:
+            user_directive = prompt.split("[USER CURRENT DIRECTIVE / MODIFICATION REQUEST]:")[-1].strip()
+        elif "[USER FOLLOW-UP / MODIFICATION DIRECTIVE]:" in prompt:
+            user_directive = prompt.split("[USER FOLLOW-UP / MODIFICATION DIRECTIVE]:")[-1].strip()
+        p_lower = user_directive.lower()
         subtasks: List[StructuredSubTask] = []
         step_idx = 1
 
@@ -658,7 +696,7 @@ class JSONStructurerAgent:
             constraints.append("Zero tolerance for calculation or specification deviations.")
 
         return StructuredGoal(
-            primary_objective=prompt,
+            primary_objective=user_directive,
             prerequisites=prereqs,
             constraints=constraints,
             sub_tasks=subtasks,
