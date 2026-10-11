@@ -124,6 +124,19 @@ class OmniOrchestrator:
                 "message": "Retrieved verified excerpts from previous chat history via RAG to ground modifications."
             })
 
+        if context_package.get("targeted_match_info"):
+            t_match = context_package["targeted_match_info"]
+            conf_pct = round(t_match["amplified_confidence"] * 100, 1)
+            t_turn = t_match["matched_turn_index"]
+            yield self._format_sse("TARGETED_DELIVERABLE_MATCHED", {
+                "chat_id": chat_id,
+                "matched_turn": t_turn,
+                "is_immediate_preceding": t_match["is_immediate_preceding"],
+                "amplified_confidence": conf_pct,
+                "raw_confidence": round(t_match["raw_confidence"] * 100, 1),
+                "message": f"Backward waterfall resolved target deliverable to Turn {t_turn} with {conf_pct}% amplified confidence."
+            })
+
         if request.user_clarifications:
             yield self._format_sse("USER_PREFERENCES_APPLIED", {
                 "clarifications": request.user_clarifications,
