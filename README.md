@@ -1,11 +1,17 @@
 # OmniTask AI 🚀
 ### Universal Multi-Agent Task Orchestration & AI Decision Ecosystem
 
+[![Live Demo](https://img.shields.io/badge/🚀_Live_Demo-omnitask--ai--03e3.onrender.com-success?style=for-the-badge&logo=render)](https://omnitask-ai-03e3.onrender.com/)
+[![API Health](https://img.shields.io/badge/Health-200_OK-brightgreen?style=for-the-badge)](https://omnitask-ai-03e3.onrender.com/api/health)
+
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-1.0-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![React 18](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![License: Proprietary](https://img.shields.io/badge/License-Proprietary-red.svg)](#-license)
+
+> 🌐 **Live Production URL**: [https://omnitask-ai-03e3.onrender.com/](https://omnitask-ai-03e3.onrender.com/)  
+> **API Health & Documentation**: [https://omnitask-ai-03e3.onrender.com/docs](https://omnitask-ai-03e3.onrender.com/docs)
 
 > **OmniTask AI** is an all-in-one multi-agent platform designed to tackle complex, multi-stage workflows that standard single-model AIs cannot execute alone. It integrates high-speed task classification via **Jev (System 1)**, interactive planning and user clarification gates, state persistence and error mitigation through a **Common Context Blackboard**, domain-matched intermediate quality gates powered exclusively by **Google Gemini**, and specialist worker execution across **Qwen 2.5 Coder**, **Mistral**, **OpenAI GPT**, and **Flux.1**.
 
