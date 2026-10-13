@@ -62,6 +62,69 @@
 
 ---
 
+## 🧠 Hidden Context, Memory Architecture & Multi-Turn Retention
+
+OmniTask AI features a production-grade multi-tier context and memory ecosystem engineered to eliminate LLM amnesia, cross-turn hallucinations, and sub-agent state drift across long-running tasks.
+
+```
++========================================================================================+
+|                              PERSISTENT GLOBAL MEMORY                                   |
+|  - Cross-chat persistent user preferences, business objectives & project profiles     |
+|  - Autonomous consolidation across past sessions (Prepended foundational memory)      |
++========================================================================================+
+                                           │
+                                           ▼
++========================================================================================+
+|                        COMMON CONTEXT BLACKBOARD (WORKING STATE)                       |
+|  - Ingested files & extracted reference materials                                     |
+|  - Hidden Inter-Agent Handovers (<agent_handover> parameters)                         |
+|  - Cumulative verified artifacts & step deliverables                                   |
+|  - Dynamic Negative Knowledge Base (Error mitigations & avoidance directives)         |
++========================================================================================+
+                                           │
+                                           ▼
++========================================================================================+
+|                       MULTI-TURN CONTEXT RAG & CASCADE MATCHER                         |
+|  - Backward Waterfall Turn Matcher (T-1 down to T-N cascade)                          |
+|  - Dynamic Contrast Amplification Formulation (Inverse compression of confidence gaps) |
+|  - Hierarchical semantic chunk retrieval & older turn compression                     |
++========================================================================================+
+```
+
+### 1. Common Context Blackboard (Shared Working Memory & Hidden Context)
+The Common Context Blackboard operates as the central, real-time single source of truth across all executing sub-agents throughout a workflow:
+* **Hidden Context Assembly**: Sub-agents do not operate in a vacuum. Before execution, the orchestrator automatically compiles a structured context packet injecting verified prerequisites, ingested file contents, cumulative prior step outputs, and active constraints.
+* **Dual-Channel Inter-Agent Handovers**: Workers produce clean, user-facing markdown deliverables on the primary channel, while passing internal technical parameters, secret states, or downstream triggers through structured hidden handovers (`<agent_handover>{"key": "val"}</agent_handover>`). The blackboard extracts these parameters into memory without cluttering the user's chat display.
+* **Dynamic Negative Knowledge Base**: Intermediate warnings, QA failures, and user negative directives (`"don't include X"`, `"not day-wise"`, `"without external libraries"`) are recorded as negative knowledge. Downstream workers automatically inherit avoidance directives to ensure the swarm never repeats an earlier mistake.
+
+### 2. Persistent Global Memory (Cross-Chat Long-Term Memory)
+A dedicated persistent memory engine that bridges conversations across days and weeks:
+* **User Identity & Business Context**: Automatically remembers user profile details, ongoing projects, coding preferences, brand guidelines, and core constraints.
+* **Autonomous Consolidation**: At the start of a session, historical conversations are analyzed to consolidate recurring facts and preferences. This distilled knowledge is prepended as a foundational memory block so the assistant never suffers from cross-session amnesia.
+* **Zero Disruption**: Persistent memory operates completely in the background without requiring manual prompt repetition or manual project re-configuration.
+
+### 3. Multi-Turn Context RAG & Hierarchical Memory Compression
+To support extended conversations without exceeding token limits or causing attention dilution:
+* **Tier 1: Full-Fidelity Active Turn ($T-1$)**: Preserves the complete preceding deliverable to serve as the immediate grounding surface for follow-up turns.
+* **Tier 2: Hierarchical Semantic RAG**: The chat history is segmented into semantic units (sections, code blocks, tables, questions). When a user specifically references past points (*"change topic 3"*, *"update question 2"*, *"in that table we made earlier"*), RAG retrieves the exact historical excerpts.
+* **Tier 3: Context Compression**: Turns older than the active window ($T-2 \dots T-N$) are condensed into high-density summary lines, preserving high-level continuity while saving token budget.
+
+### 4. Backward-Traversing Waterfall Matcher with Dynamic Contrast Amplification
+When a user asks a follow-up modification or query (e.g., *"add ___ in this"*, *"why did you do this?"*, *"can we change section 2?"*), standard systems often anchor onto the wrong historical message or get confused by superficial keyword overlap. OmniTask AI implements a **Temporal Waterfall Search with Dynamic Contrast Amplification**:
+
+* **Temporal Waterfall Traversal**: Evaluates candidate deliverables backwards chronologically ($T-1$, then $T-2$, etc.). If $T-1$ lacks topical or structural fit (e.g., $T-1$ was a short clarification or poem, and $T-2$ was the actual quiz or table), it cascades backwards until it finds the genuine target deliverable.
+* **Stem-Aware Content Fit**: Normalizes word variations (*questions $\to$ question*, *recipes $\to$ recip*, *topics $\to$ topic*) to compute exact lexical, structural, and entity alignment.
+* **Dynamic Contrast Amplification Formulation** (Mathematical Inverse of Min-Max / Z-Score Compression):
+  When candidate turns have close confidence scores (e.g., $s_1 = 0.62$ vs $s_2 = 0.60$, a minute margin of $\Delta = 0.02$):
+  $$\text{Gain } G(\Delta) = \frac{4.2}{\max(\Delta, 0.015)}$$
+  $$S_{\text{amplified}}(s) = \frac{1}{1 + \exp\left(-G(\Delta) \cdot (s - \mu)\right)} \quad \text{where } \mu = \frac{s_1 + s_2}{2}$$
+  This non-linear dispersion formula dynamically magnifies a minute $0.02$ difference into an **unequivocal $78.2\%$ separation** ($89.1\%$ vs $10.9\%$), eliminating ambiguity and locking the exact intended deliverable as the primary grounding target.
+
+### 5. Universal Cardinality Disambiguation & Deliverable Purity
+* **Cardinality Disambiguation**: Intelligently separates domain context measurements/timelines (e.g., *9 days, 30-day challenge, 12 weeks, 15-30s clips, 100m sprint*) from target generation counts. It delivers the organically optimal, non-padded set (typically 3 to 6 distinct pillars) rather than hallucinating filler items to reach a duration number.
+* **Deliverable Purity**: Primary deliverables strictly contain authentic user-facing items (code, topics, recipes, questions), while internal strategies, creator advice, and soft-selling guidelines are routed into a dedicated `### Operational Strategy & Execution Guidelines` section at the end.
+* **Direct Q&A Resolution**: When a user raises a doubt, conceptual objection, or feasibility question (*"how can we do this in practice?"*, *"isn't X a one-day thing?"*), the engine provides direct, thorough answers grounded in the preceding deliverable rather than blindly restarting the generation from scratch.
+
 ## 🚀 Dual-Track Capabilities
 
 ### Track 1: Free AI Advisor & Directory (DIY)
@@ -154,10 +217,15 @@ OmniTask-AI/
 │   │   ├── advisor/              # Track 1: Tool matrix & recommendation engine
 │   │   ├── config.py             # App configuration & environment loader
 │   │   ├── core/
-│   │   │   ├── blackboard.py     # Common Context Window & Negative Knowledge
-│   │   │   ├── evaluator.py      # Final completion scoring & packaging
-│   │   │   ├── jev_router.py     # Jev System 1 Fast Router (Routing Only)
-│   │   │   └── structurer.py     # JSON Structurer Agent
+│   │   │   ├── blackboard.py         # Common Context Window, State Registry & Avoidance Rules
+│   │   │   ├── chat_manager.py       # Multi-turn chat session & metadata management
+│   │   │   ├── context_rag.py        # Backward waterfall matcher & contrast amplification RAG
+│   │   │   ├── hermes_memory.py      # Dedicated Persistent Global Memory Engine
+│   │   │   ├── interactive_planner.py# System 2 planning & user clarification gates
+│   │   │   ├── dynamic_replanner.py  # Adaptive DAG replenishment & swarm expansion
+│   │   │   ├── evaluator.py          # Final completion scoring & packaging
+│   │   │   ├── jev_router.py         # Jev System 1 Fast Router (Routing Only)
+│   │   │   └── structurer.py         # JSON Structurer Agent
 │   │   ├── main.py               # FastAPI application & static mount
 │   │   ├── models/               # Strict Pydantic schemas & contracts
 │   │   ├── orchestrator.py       # End-to-end SSE Multi-Agent Loop
