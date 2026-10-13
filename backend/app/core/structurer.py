@@ -33,23 +33,23 @@ class JSONStructurerAgent:
             file_summaries.append(f"- File: '{f.filename}' ({f.content_type}, {f.size_bytes} bytes). Preview: {preview_snippet}...")
         files_context = "\n".join(file_summaries) if file_summaries else "None attached."
 
-        # 1. Primary: Attempt live Gemini decomposition with structured JSON mode
-        if self.gemini_key:
-            try:
-                goal = await self._call_gemini_structurer(cleaned_prompt, files_context, files)
-                if goal:
-                    return goal
-            except Exception as e:
-                print(f"[JSON Structurer] Gemini structuring error: {e}. Trying Groq fallback.")
-
-        # 2. Secondary: Attempt live Groq decomposition with JSON mode
+        # 1. Primary: Attempt live Groq decomposition with JSON mode (Fastest: ~1.2s)
         if self.groq_key:
             try:
                 goal = await self._call_groq_structurer(cleaned_prompt, files_context, files)
-                if goal:
+                if goal and goal.sub_tasks:
                     return goal
             except Exception as e:
-                print(f"[JSON Structurer] Groq structuring error: {e}. Falling back to dynamic semantic engine.")
+                print(f"[JSON Structurer] Groq structuring error: {e}. Trying Gemini fallback.")
+
+        # 2. Secondary: Attempt live Gemini decomposition with structured JSON mode
+        if self.gemini_key:
+            try:
+                goal = await self._call_gemini_structurer(cleaned_prompt, files_context, files)
+                if goal and goal.sub_tasks:
+                    return goal
+            except Exception as e:
+                print(f"[JSON Structurer] Gemini structuring error: {e}. Falling back to dynamic semantic engine.")
 
         # 3. Dynamic Semantic Decomposition Fallback (Zero hardcoded text, prompt-derived)
         return self._dynamic_semantic_structure(cleaned_prompt, files)
@@ -162,7 +162,7 @@ class JSONStructurerAgent:
             "}"
         )
 
-        candidate_models = ["gemini-flash-lite-latest", "gemini-3.1-flash-lite"]
+        candidate_models = ["gemini-3.8-flash", "gemini-2.5-flash-lite", "gemini-flash-lite-latest"]
         for c_model in candidate_models:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{c_model}:generateContent?key={self.gemini_key}"
             payload = {
@@ -174,7 +174,7 @@ class JSONStructurerAgent:
             }
 
             try:
-                async with httpx.AsyncClient(timeout=45.0) as client:
+                async with httpx.AsyncClient(timeout=5.0) as client:
                     resp = await client.post(url, json=payload)
                     if resp.status_code == 200:
                         data = resp.json()
@@ -507,13 +507,108 @@ class JSONStructurerAgent:
         Contains ZERO hardcoded test snippets or fixed formulas.
         """
         user_directive = prompt
-        if "[USER CURRENT DIRECTIVE / MODIFICATION REQUEST]:" in prompt:
-            user_directive = prompt.split("[USER CURRENT DIRECTIVE / MODIFICATION REQUEST]:")[-1].strip()
-        elif "[USER FOLLOW-UP / MODIFICATION DIRECTIVE]:" in prompt:
-            user_directive = prompt.split("[USER FOLLOW-UP / MODIFICATION DIRECTIVE]:")[-1].strip()
+        # Strip injected persistent memory blocks and directives
+        if "======================================================================" in user_directive:
+            parts = user_directive.split("======================================================================")
+            if len(parts) >= 3:
+                user_directive = parts[-1].strip()
+        if "[USER CURRENT DIRECTIVE / MODIFICATION REQUEST]:" in user_directive:
+            user_directive = user_directive.split("[USER CURRENT DIRECTIVE / MODIFICATION REQUEST]:")[-1].strip()
+        elif "[USER FOLLOW-UP / MODIFICATION DIRECTIVE]:" in user_directive:
+            user_directive = user_directive.split("[USER FOLLOW-UP / MODIFICATION DIRECTIVE]:")[-1].strip()
+        if "[USER APPROVED CLARIFICATIONS & SPECIFICATIONS]:" in user_directive:
+            user_directive = user_directive.split("[USER APPROVED CLARIFICATIONS & SPECIFICATIONS]:")[0].strip()
+        if "[USER APPROVED ARCHITECTURE PLAN]:" in user_directive:
+            user_directive = user_directive.split("[USER APPROVED ARCHITECTURE PLAN]:")[0].strip()
+
+        # Sanitize for title snippet
+        clean_snippet = re.sub(r'[\r\n\t]+', ' ', user_directive).strip()
+        clean_snippet = re.sub(r'[*_`#"\']', '', clean_snippet)[:45].strip()
+        if not clean_snippet:
+            clean_snippet = "Specified Directive"
+
         p_lower = user_directive.lower()
         subtasks: List[StructuredSubTask] = []
         step_idx = 1
+
+        def _has_kw(keywords: List[str], text: str) -> bool:
+            for kw in keywords:
+                if re.search(rf"\b{re.escape(kw)}\b", text, re.IGNORECASE):
+                    return True
+            return False
+
+        # --- PRIORITY 1: Academic / Syllabus / Exam / Quiz / Document Deliverable ---
+        is_academic_assignment = bool(files) or _has_kw([
+            "syllabus", "assignment", "assignments", "quiz", "exam", "test paper",
+            "question paper", "question bank", "mcq", "multiple choice",
+            "fill in the blanks", "fill-in-the-blank", "answer key", "ans key",
+            "unit 1", "unit 2", "unit 3", "unit 4", "btech", "lecture notes", "study guide"
+        ], p_lower)
+
+        if is_academic_assignment:
+            file_names = ", ".join([f.filename for f in files]) if files else "provided syllabus and materials"
+            wants_word = _has_kw(["word", "docx", "doc", "microsoft word", "in word", "as word", "doc file", "doc files"], p_lower)
+            wants_pdf = _has_kw(["pdf", "download as pdf", "generate pdf", "make a pdf", "in a pdf", "seperate pdf", "separate pdf"], p_lower)
+
+            # Step 1: In-depth questions and answer formulation
+            subtasks.append(StructuredSubTask(
+                step_id=f"step_{step_idx}",
+                title=f"In-Depth Quiz & Solution Formulation from Syllabus",
+                domain=DomainType.AUDIT,
+                description=f"Synthesize comprehensive, high-difficulty exam questions (MCQs with plausible distractors, fill in the blanks, complex conceptual problems) and an exhaustive separate answer key from {file_names}.",
+                assigned_worker_model="OpenAI GPT (Auditing Specialist)",
+                assigned_reviewer_model="Gemini 2.0 Flash (Multimodal & Step QA Reviewer)",
+                required_prerequisites=["Attached syllabus and specifications"],
+                expected_output_type="solutions_markdown",
+                status=TaskStatus.PENDING
+            ))
+            step_idx += 1
+
+            # Step 2: Binary publication document compiler
+            if wants_word or not wants_pdf:
+                subtasks.append(StructuredSubTask(
+                    step_id=f"step_{step_idx}",
+                    title="Publication-Grade Microsoft Word (.docx) Document Compilation",
+                    domain=DomainType.AUDIT,
+                    description="Compile and format the verified quiz questions, options, code snippets, and answer key into publication-grade Microsoft Word document (.docx) and companion PDF files ready for download.",
+                    assigned_worker_model="Word & Document Publishing Specialist",
+                    assigned_reviewer_model="Gemini 2.0 Flash (Multimodal & Step QA Reviewer)",
+                    required_prerequisites=[f"step_{step_idx-1}"],
+                    expected_output_type="word_document",
+                    status=TaskStatus.PENDING
+                ))
+                step_idx += 1
+            else:
+                subtasks.append(StructuredSubTask(
+                    step_id=f"step_{step_idx}",
+                    title="Publication-Grade PDF Document Compilation",
+                    domain=DomainType.AUDIT,
+                    description="Compile the verified questions, options, and answer key into a beautifully formatted, publication-grade PDF document ready for download.",
+                    assigned_worker_model="PDF & Document Publishing Specialist",
+                    assigned_reviewer_model="Gemini 2.0 Flash (Multimodal & Step QA Reviewer)",
+                    required_prerequisites=[f"step_{step_idx-1}"],
+                    expected_output_type="pdf_document",
+                    status=TaskStatus.PENDING
+                ))
+                step_idx += 1
+
+            # Dedicated constraints and prerequisites for academic deliverable
+            prereqs = [f"User Objective: {clean_snippet}"]
+            for f in files:
+                prereqs.append(f"Ingested Resource: {f.filename} ({f.content_type}, {f.size_bytes} bytes)")
+            constraints = [
+                "Must maintain strict academic rigor and difficulty suitable for 4th year BTech students.",
+                "Questions and Answer Key must be cleanly structured into separate deliverable documents.",
+                "All intermediate outputs must pass quality review before commit."
+            ]
+            return StructuredGoal(
+                primary_objective=f"Formulate comprehensive academic assignment and compile publication-grade documents for: {clean_snippet}",
+                prerequisites=prereqs,
+                constraints=constraints,
+                sub_tasks=subtasks,
+                jev_routing_latency_ms=0.0,
+                jev_confidence=0.99
+            )
 
         # Check for Conversational Doubt / Strategy Inquiry / Direct Question
         is_question_or_doubt = any(q in p_lower for q in [
@@ -523,7 +618,7 @@ class JSONStructurerAgent:
         if is_question_or_doubt:
             subtasks.append(StructuredSubTask(
                 step_id=f"step_{step_idx}",
-                title=f"Direct Strategic Clarification & Resolution for '{user_directive[:45]}...'",
+                title=f"Direct Strategic Clarification & Resolution for '{clean_snippet}...'",
                 domain=DomainType.AUDIT,
                 description=f"Directly and thoughtfully answer the user's question, doubt, or strategic inquiry: '{user_directive}'. Provide clear reasoning, practical solutions, and detailed explanations grounded in the preceding deliverable. Do NOT restart from scratch or regenerate a generic catalog.",
                 assigned_worker_model="Gemini 2.0 Flash (Summarizer Specialist)",
@@ -535,14 +630,14 @@ class JSONStructurerAgent:
             step_idx += 1
 
         # Check for Riddle / Guessing Game with Visual Output
-        has_riddle = not is_question_or_doubt and any(w in p_lower for w in ["riddle", "guess", "puzzle", "pointers and we have to guess", "thinking of an image"])
-        wants_image = any(w in p_lower for w in ["image", "picture", "photo", "render", "draw"])
+        has_riddle = not is_question_or_doubt and _has_kw(["riddle", "guess", "puzzle", "pointers and we have to guess", "thinking of an image"], p_lower)
+        wants_image = _has_kw(["image", "picture", "photo", "render", "draw"], p_lower)
         if has_riddle and wants_image:
             subtasks.append(StructuredSubTask(
                 step_id=f"step_{step_idx}",
                 title="Compose Object Riddle and Pointers",
                 domain=DomainType.AUDIT,
-                description=f"Compose an engaging riddle and 5 clue pointers for a chosen secret object without revealing the answer in text: {prompt}",
+                description=f"Compose an engaging riddle and 5 clue pointers for a chosen secret object without revealing the answer in text: {user_directive}",
                 assigned_worker_model="OpenAI GPT (Auditing Specialist)",
                 assigned_reviewer_model="Gemini 2.0 Flash (Multimodal & Step QA Reviewer)",
                 required_prerequisites=["Initial riddle constraints"],
@@ -564,13 +659,13 @@ class JSONStructurerAgent:
             step_idx += 1
 
         # Check for Math / Calculation / Financial
-        has_math = any(w in p_lower for w in ["math", "calculate", "equation", "formula", "regression", "statistics", "numerical", "finance", "revenue", "roi", "data analysis", "cost"])
+        has_math = _has_kw(["math", "calculate", "equation", "formula", "regression", "statistics", "numerical", "finance", "revenue", "roi", "data analysis", "cost"], p_lower)
         if has_math:
             subtasks.append(StructuredSubTask(
                 step_id=f"step_{step_idx}",
-                title=f"Quantitative Derivation & Analysis for '{prompt[:45]}...'",
+                title=f"Quantitative Derivation & Analysis for '{clean_snippet}...'",
                 domain=DomainType.MATH,
-                description=f"Perform rigorous mathematical derivation, numerical evaluation, or statistical calculation for: {prompt}",
+                description=f"Perform rigorous mathematical derivation, numerical evaluation, or statistical calculation for: {user_directive}",
                 assigned_worker_model="Mistral (Legal & Formal Logic Specialist)",
                 assigned_reviewer_model="Gemini 2.0 Flash (Multimodal & Step QA Reviewer)",
                 required_prerequisites=["Raw parameters and boundary conditions"],
@@ -580,13 +675,13 @@ class JSONStructurerAgent:
             step_idx += 1
 
         # Check for Poetry / Creative Writing / Lyrics
-        has_poem = any(w in p_lower for w in ["poem", "poetry", "rhyme", "sonnet", "ballad", "verse", "lyrics", "haiku"])
+        has_poem = _has_kw(["poem", "poetry", "rhyme", "sonnet", "ballad", "verse", "lyrics", "haiku"], p_lower)
         if has_poem:
             subtasks.append(StructuredSubTask(
                 step_id=f"step_{step_idx}",
-                title=f"Compose Creative Poem for '{prompt[:40]}...'",
+                title=f"Compose Creative Poem for '{clean_snippet}...'",
                 domain=DomainType.AUDIT,
-                description=f"Write an evocative, charming, and beautifully styled poem in plain markdown text fulfilling: {prompt}",
+                description=f"Write an evocative, charming, and beautifully styled poem in plain markdown text fulfilling: {user_directive}",
                 assigned_worker_model="Gemini 2.0 Flash (Summarizer Specialist)",
                 assigned_reviewer_model="Gemini 2.0 Flash (Multimodal & Step QA Reviewer)",
                 required_prerequisites=[f"step_{step_idx-1}"] if step_idx > 1 else ["Creative theme parameters"],
@@ -595,18 +690,18 @@ class JSONStructurerAgent:
             ))
             step_idx += 1
 
-        # Check for Coding / Frontend / Software Engineering (strictly exclude creative text)
+        # Check for Coding / Frontend / Software Engineering (strictly exclude non-coding text)
         explicit_code_words = [
-            "python", "script", "program", "api", "function", "backend", "algorithm",
-            "develop", "software", "endpoint", "class", "bot", "code", "coding",
+            "python", "script", "api", "backend", "algorithm",
+            "develop", "software", "endpoint", "coding",
             "html", "css", "webpage", "website", "frontend", "landing page", "replica",
-            "ui", "interface", "react", "vue", "javascript"
+            "react", "vue", "javascript", "typescript"
         ]
-        has_code = any(w in p_lower for w in explicit_code_words) and not (has_poem and not any(w in p_lower for w in ["python", "script", "api", "backend", "algorithm"]))
+        has_code = _has_kw(explicit_code_words, p_lower) and not (has_poem and not _has_kw(["python", "script", "api", "backend", "algorithm"], p_lower))
         if has_code:
-            is_web = any(w in p_lower for w in ["html", "css", "webpage", "website", "frontend", "landing page", "replica", "ui", "interface", "react", "vue"])
-            desc = f"Engineer standalone, responsive HTML5/CSS3 frontend implementation matching: {prompt}" if is_web else f"Engineer production-grade software implementation matching: {prompt}"
-            title = f"Web & UI Implementation for '{prompt[:45]}...'" if is_web else f"Modular Implementation & Architecture for '{prompt[:45]}...'"
+            is_web = _has_kw(["html", "css", "webpage", "website", "frontend", "landing page", "replica", "react", "vue"], p_lower)
+            desc = f"Engineer standalone, responsive HTML5/CSS3 frontend implementation matching: {user_directive}" if is_web else f"Engineer production-grade software implementation matching: {user_directive}"
+            title = f"Web & UI Implementation for '{clean_snippet}...'" if is_web else f"Modular Implementation & Architecture for '{clean_snippet}...'"
             out_type = "frontend_html_css_markup" if is_web else "executable_code"
             subtasks.append(StructuredSubTask(
                 step_id=f"step_{step_idx}",
@@ -622,15 +717,15 @@ class JSONStructurerAgent:
             step_idx += 1
 
         # Check for Visual / Diagram / Render
-        has_vision = any(w in p_lower for w in ["image", "picture", "infographic", "visual", "logo", "mockup", "photo", "render", "diagram", "chart", "flowchart"])
+        has_vision = _has_kw(["image", "picture", "infographic", "visual", "logo", "mockup", "photo", "render", "diagram", "chart", "flowchart"], p_lower)
         if has_vision:
-            is_diagram = any(w in p_lower for w in ["diagram", "chart", "infographic", "architecture", "flowchart", "schematic"])
-            title = f"Technical Infographic for '{prompt[:45]}...'" if is_diagram else f"Visual Asset Render for '{prompt[:45]}...'"
+            is_diagram = _has_kw(["diagram", "chart", "infographic", "architecture", "flowchart", "schematic"], p_lower)
+            title = f"Technical Infographic for '{clean_snippet}...'" if is_diagram else f"Visual Asset Render for '{clean_snippet}...'"
             subtasks.append(StructuredSubTask(
                 step_id=f"step_{step_idx}",
                 title=title,
                 domain=DomainType.VISION,
-                description=f"Synthesize high-fidelity visual asset or diagram fulfilling: {prompt}",
+                description=f"Synthesize high-fidelity visual asset or diagram fulfilling: {user_directive}",
                 assigned_worker_model="Flux.1 (Visual Asset Specialist)",
                 assigned_reviewer_model="Gemini 2.0 Flash (Multimodal & Step QA Reviewer)",
                 required_prerequisites=[f"step_{step_idx-1}"] if step_idx > 1 else ["Visual directives"],
@@ -639,101 +734,21 @@ class JSONStructurerAgent:
             ))
             step_idx += 1
 
-        # Check for Attached File Analysis / Exam Notes / Document Ingestion
-        if files or any(w in p_lower for w in ["exam", "test", "quiz", "question", "questions and answer", "study", "prep", "notes", "lecture", "pdf", "word", "docx", "doc", "document", "summarize", "analyze"]):
+        # Check for Attached File Analysis / Document Ingestion
+        if files or _has_kw(["summarize", "analyze", "document", "report", "extract"], p_lower):
             file_names = ", ".join([f.filename for f in files]) if files else "provided material"
-            wants_word = any(w in p_lower for w in ["word", "docx", "doc", "microsoft word", "in word", "as word"])
-            wants_pdf = any(w in p_lower for w in ["pdf", "download as pdf", "generate pdf", "make a pdf", "in a pdf"])
-            is_quiz = any(w in p_lower for w in ["quiz", "test", "exam", "question", "questions and answer", "test paper"])
-
-            if wants_word:
-                subtasks.append(StructuredSubTask(
-                    step_id=f"step_{step_idx}",
-                    title=f"In-Depth Quiz & Solution Formulation from Syllabus",
-                    domain=DomainType.AUDIT,
-                    description=f"Synthesize comprehensive, high-difficulty exam questions, multiple choice options with plausible distractors, complex application problems, and an exhaustive answer key from {file_names}.",
-                    assigned_worker_model="OpenAI GPT (Auditing Specialist)",
-                    assigned_reviewer_model="Gemini 2.0 Flash (Multimodal & Step QA Reviewer)",
-                    required_prerequisites=["Attached syllabus and specifications"],
-                    expected_output_type="solutions_markdown",
-                    status=TaskStatus.PENDING
-                ))
-                step_idx += 1
-                subtasks.append(StructuredSubTask(
-                    step_id=f"step_{step_idx}",
-                    title="Publication-Grade Microsoft Word (.docx) Document Compilation",
-                    domain=DomainType.AUDIT,
-                    description="Compile and format the verified quiz questions, options, code snippets, and answer key into a publication-grade Microsoft Word document (.docx) ready for download.",
-                    assigned_worker_model="Word & Document Publishing Specialist",
-                    assigned_reviewer_model="Gemini 2.0 Flash (Multimodal & Step QA Reviewer)",
-                    required_prerequisites=[f"step_{step_idx-1}"],
-                    expected_output_type="word_document",
-                    status=TaskStatus.PENDING
-                ))
-                step_idx += 1
-            elif wants_pdf:
-                subtasks.append(StructuredSubTask(
-                    step_id=f"step_{step_idx}",
-                    title=f"In-Depth Question Answering & Solutions for '{prompt[:40]}...'",
-                    domain=DomainType.AUDIT,
-                    description=f"Extract and thoroughly answer every single question from {file_names} with comprehensive technical explanations, step-by-step reasoning, and complete answers. Do NOT truncate or skip any questions.",
-                    assigned_worker_model="OpenAI GPT (Auditing Specialist)",
-                    assigned_reviewer_model="Gemini 2.0 Flash (Multimodal & Step QA Reviewer)",
-                    required_prerequisites=["Attached documents and specifications"],
-                    expected_output_type="solutions_markdown",
-                    status=TaskStatus.PENDING
-                ))
-                step_idx += 1
-                subtasks.append(StructuredSubTask(
-                    step_id=f"step_{step_idx}",
-                    title="Publication-Grade PDF Document Compilation",
-                    domain=DomainType.AUDIT,
-                    description="Compile the comprehensive verified solutions into a beautifully formatted, publication-grade PDF document ready for download.",
-                    assigned_worker_model="PDF & Document Publishing Specialist",
-                    assigned_reviewer_model="Gemini 2.0 Flash (Multimodal & Step QA Reviewer)",
-                    required_prerequisites=[f"step_{step_idx-1}"],
-                    expected_output_type="pdf_document",
-                    status=TaskStatus.PENDING
-                ))
-                step_idx += 1
-            elif is_quiz:
-                subtasks.append(StructuredSubTask(
-                    step_id=f"step_{step_idx}",
-                    title=f"In-Depth Quiz & Solution Formulation from Syllabus",
-                    domain=DomainType.AUDIT,
-                    description=f"Synthesize comprehensive, high-difficulty exam questions, multiple choice options with plausible distractors, complex application problems, and an exhaustive answer key from {file_names}.",
-                    assigned_worker_model="OpenAI GPT (Auditing Specialist)",
-                    assigned_reviewer_model="Gemini 2.0 Flash (Multimodal & Step QA Reviewer)",
-                    required_prerequisites=["Attached syllabus and specifications"],
-                    expected_output_type="solutions_markdown",
-                    status=TaskStatus.PENDING
-                ))
-                step_idx += 1
-                subtasks.append(StructuredSubTask(
-                    step_id=f"step_{step_idx}",
-                    title="Publication-Grade Document Compilation & Export",
-                    domain=DomainType.AUDIT,
-                    description="Format and compile the quiz and answer key into a publication-grade downloadable document.",
-                    assigned_worker_model="Word & Document Publishing Specialist",
-                    assigned_reviewer_model="Gemini 2.0 Flash (Multimodal & Step QA Reviewer)",
-                    required_prerequisites=[f"step_{step_idx-1}"],
-                    expected_output_type="word_document",
-                    status=TaskStatus.PENDING
-                ))
-                step_idx += 1
-            else:
-                subtasks.append(StructuredSubTask(
-                    step_id=f"step_{step_idx}",
-                    title=f"In-Depth Synthesis & Deliverable Generation for '{prompt[:45]}...'",
-                    domain=DomainType.AUDIT,
-                    description=f"Extract key concepts from {file_names} and fulfill the user's primary deliverable: {prompt}",
-                    assigned_worker_model="OpenAI GPT (Auditing Specialist)",
-                    assigned_reviewer_model="Gemini 2.0 Flash (Multimodal & Step QA Reviewer)",
-                    required_prerequisites=[f"step_{step_idx-1}"] if step_idx > 1 else ["Attached documents and specifications"],
-                    expected_output_type="comprehensive_deliverable_markdown",
-                    status=TaskStatus.PENDING
-                ))
-                step_idx += 1
+            subtasks.append(StructuredSubTask(
+                step_id=f"step_{step_idx}",
+                title=f"In-Depth Synthesis & Deliverable Generation for '{clean_snippet}...'",
+                domain=DomainType.AUDIT,
+                description=f"Extract key concepts from {file_names} and fulfill the user's primary deliverable: {user_directive}",
+                assigned_worker_model="OpenAI GPT (Auditing Specialist)",
+                assigned_reviewer_model="Gemini 2.0 Flash (Multimodal & Step QA Reviewer)",
+                required_prerequisites=[f"step_{step_idx-1}"] if step_idx > 1 else ["Attached documents and specifications"],
+                expected_output_type="comprehensive_deliverable_markdown",
+                status=TaskStatus.PENDING
+            ))
+            step_idx += 1
 
         # If no subtasks matched:
         if not subtasks:

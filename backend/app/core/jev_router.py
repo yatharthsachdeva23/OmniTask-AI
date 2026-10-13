@@ -67,7 +67,12 @@ class JevFastRouter:
         if domain == DomainType.VISION and not is_vision_task:
             return DomainType.AUDIT
 
-        quiz_triggers = ["quiz", "exam", "test paper", "question paper", "mcq", "multiple choice", "fill-in-the-blank", "answer key", "study guide", "syllabus", "problem set", "assignment questions"]
+        quiz_triggers = [
+            "quiz", "exam", "test paper", "question paper", "mcq", "multiple choice",
+            "fill-in-the-blank", "fill in the blanks", "answer key", "ans key",
+            "study guide", "syllabus", "problem set", "assignment questions", "assignment", "assignments",
+            "unit 1", "unit 2", "unit 3", "unit 4", "btech", "doc file", "doc files"
+        ]
         is_quiz_task = any(qt in task_text for qt in quiz_triggers) or any(qt in prompt_text for qt in quiz_triggers)
         is_software_dev = any(st in (title + " " + desc).lower() for st in [
             "build app", "create website", "react app", "fastapi app", "terminal game", "cli script", "python script to run", "write a program that"
@@ -153,7 +158,12 @@ class JevFastRouter:
             if domain_str == "code":
                 worker_model = self.worker_dispatch_table["code"]
             elif domain_str in ["audit", "general"]:
-                is_answering_step = any(w in task.title.lower() for w in ["question answering", "answer questions", "answering & solutions", "answering and solutions", "extract and answer", "quiz formulation", "quiz generation"])
+                is_answering_step = any(w in task.title.lower() for w in [
+                    "question answering", "answer questions", "answering & solutions",
+                    "answering and solutions", "extract and answer", "quiz formulation",
+                    "quiz generation", "quiz & solution formulation", "solution formulation",
+                    "formulation from syllabus"
+                ])
                 is_word_step = (
                     (task.expected_output_type or "").lower() in ["word_document", "docx", "doc"]
                     or "word" in (task.assigned_worker_model or "").lower()

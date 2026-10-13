@@ -128,8 +128,8 @@ class IntermediateReviewEngine:
                 )
                 return review, neg
 
-        # 1. Primary: Real live call to Google Gemini with JSON mode (multimodal inspection for vision)
-        if self.gemini_key:
+        # 1. For Vision tasks: Primary call to Google Gemini for multimodal inspection
+        if domain == DomainType.VISION and self.gemini_key:
             try:
                 live_review, live_neg = await self._call_live_gemini(
                     task,
@@ -142,9 +142,9 @@ class IntermediateReviewEngine:
                 if live_review:
                     return live_review, live_neg
             except Exception as e:
-                print(f"[Gemini Reviewer] Live API error: {e}. Trying Groq reviewer fallback.")
+                print(f"[Gemini Reviewer] Vision API error: {e}. Trying Groq reviewer fallback.")
 
-        # 2. Secondary: Live Groq reviewer fallback with JSON mode
+        # 2. Fast live Groq reviewer (takes ~1.1s for text/code/audit/math tasks)
         if self.groq_key:
             try:
                 groq_review, groq_neg = await self._call_groq_reviewer(
@@ -156,9 +156,23 @@ class IntermediateReviewEngine:
                 if groq_review:
                     return groq_review, groq_neg
             except Exception as e:
-                print(f"[Reviewer] Groq review error: {e}. Falling back to programmatic inspection.")
+                print(f"[Reviewer] Groq review error: {e}. Trying Gemini reviewer.")
 
-        # 3. Dynamic Programmatic Inspection (AST parsing, failure marker detection, honest scoring)
+        # 3. Secondary: Gemini call if Groq was unavailable
+        if self.gemini_key and domain != DomainType.VISION:
+            try:
+                live_review, live_neg = await self._call_live_gemini(
+                    task,
+                    worker_result,
+                    primary_objective,
+                    prior_context_summary=prior_context_summary
+                )
+                if live_review:
+                    return live_review, live_neg
+            except Exception as e:
+                print(f"[Gemini Reviewer] Secondary API error: {e}.")
+
+        # 4. Dynamic Programmatic Inspection (AST parsing, failure marker detection, honest scoring)
         return self._programmatic_inspection(task, worker_result, primary_objective)
 
     async def _call_live_gemini(
@@ -254,7 +268,7 @@ class IntermediateReviewEngine:
             )
             parts = [{"text": prompt_text}]
 
-        candidate_models = ["gemini-flash-lite-latest", "gemini-3.1-flash-lite"]
+        candidate_models = ["gemini-3.8-flash", "gemini-2.5-flash-lite", "gemini-flash-lite-latest"]
         for c_model in candidate_models:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{c_model}:generateContent?key={self.gemini_key}"
             payload = {
@@ -265,7 +279,7 @@ class IntermediateReviewEngine:
                 }
             }
             try:
-                async with httpx.AsyncClient(timeout=14.0) as client:
+                async with httpx.AsyncClient(timeout=5.0) as client:
                     resp = await client.post(url, json=payload)
                     if resp.status_code == 200:
                         data = resp.json()
@@ -288,10 +302,19 @@ class IntermediateReviewEngine:
             "MULTI-AGENT EVALUATION DIRECTIVE:\n"
             "The user objective is decomposed into a sequential pipeline of specialized sub-tasks.\n"
             "You MUST evaluate whether THIS worker successfully executed ITS assigned sub-task milestone.\n"
-            "Do NOT penalize this sub-agent for not fulfilling other stages of the workflow handled by preceding or downstream workers!\n"
-            "If the worker faithfully accomplished what was requested for THIS specific milestone, award a quality_score between 85 and 98 and set passed: true, status: 'approved'.\n"
-            "CRITICAL: If the worker refused, output placeholder text, or produced completely wrong/off-topic content for this milestone, reject it with score between 0 and 5.\n"
-            "If score < 85, you MUST provide 'reviewer_regenerate_prompt': A concrete rewritten prompt for the worker to fix its output.\n"
+            "Do NOT penalize this sub-agent for not fulfilling other stages of the workflow handled by preceding or downstream workers!\n\n"
+            "EVALUATION CRITERIA:\n"
+            "1. APPROVAL (passed: true, status: 'approved', quality_score: 88 to 98):\n"
+            "   - The worker generated substantive, relevant content fulfilling the milestone directives.\n"
+            "   - For quiz/assignment formulation: contains real questions (MCQs with options, fill-in-the-blanks, problem sets) and a corresponding answer key.\n"
+            "   - For document compilation: successfully converted text into publication-grade documents with download links.\n"
+            "   - For coding: contains valid, executable code blocks.\n"
+            "   - Constructive suggestions or minor polish ideas belong in 'recommendations' while keeping score >= 88%.\n\n"
+            "2. REJECTION (passed: false, status: 'rejected', quality_score: 10 to 45):\n"
+            "   - Worker produced completely off-topic output (e.g. HTML/CSS code when asked for an exam/study guide).\n"
+            "   - Worker output is an explicit refusal ('I cannot access the file', 'As an AI I cannot').\n"
+            "   - Worker output is placeholder stubs, 'TODO', or empty (< 50 words).\n"
+            "   - If score < 85, you MUST provide 'reviewer_regenerate_prompt': A concrete rewritten prompt for the worker to fix its output.\n\n"
             "Output strictly valid JSON with keys: 'passed' (bool), 'status' ('approved'|'rejected'|'warning'), 'quality_score' (int 0-100), 'critique' (str), 'recommendations' (list of str), 'reviewer_regenerate_prompt' (str or null), 'negative_knowledge_directive' (str)."
         )
         user_msg = (

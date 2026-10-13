@@ -239,29 +239,10 @@ class PersistentMemoryManager:
 
         user_content = f"Transcript to analyze for durable user profile and preferences:\n\n{chat_transcript[:25000]}"
 
-        # 1. Try Gemini
-        if self.gemini_key:
-            try:
-                async with httpx.AsyncClient(timeout=14.0) as client:
-                    resp = await client.post(
-                        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key={self.gemini_key}",
-                        json={
-                            "contents": [{"parts": [{"text": f"{system_instruction}\n\n{user_content}"}]}],
-                            "generationConfig": {"response_mime_type": "application/json"}
-                        }
-                    )
-                    if resp.status_code == 200:
-                        raw = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
-                        data = json.loads(raw)
-                        if isinstance(data, dict):
-                            return data
-            except Exception as e:
-                print(f"[PersistentMemory] Gemini extraction note: {e}. Trying Groq fallback.")
-
-        # 2. Try Groq
+        # 1. Try Groq (blazing fast: ~0.8s)
         if self.groq_key:
             try:
-                async with httpx.AsyncClient(timeout=12.0) as client:
+                async with httpx.AsyncClient(timeout=8.0) as client:
                     resp = await client.post(
                         "https://api.groq.com/openai/v1/chat/completions",
                         headers={
@@ -284,7 +265,27 @@ class PersistentMemoryManager:
                         if isinstance(data, dict):
                             return data
             except Exception as e:
-                print(f"[PersistentMemory] Groq extraction note: {e}")
+                print(f"[PersistentMemory] Groq extraction note: {e}. Trying Gemini fallback.")
+
+        # 2. Try Gemini Fallback
+        if self.gemini_key:
+            for c_model in ["gemini-3.8-flash", "gemini-2.5-flash-lite", "gemini-flash-lite-latest"]:
+                try:
+                    async with httpx.AsyncClient(timeout=4.0) as client:
+                        resp = await client.post(
+                            f"https://generativelanguage.googleapis.com/v1beta/models/{c_model}:generateContent?key={self.gemini_key}",
+                            json={
+                                "contents": [{"parts": [{"text": f"{system_instruction}\n\n{user_content}"}]}],
+                                "generationConfig": {"response_mime_type": "application/json"}
+                            }
+                        )
+                        if resp.status_code == 200:
+                            raw = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+                            data = json.loads(raw)
+                            if isinstance(data, dict):
+                                return data
+                except Exception:
+                    continue
 
         return None
 

@@ -28,6 +28,13 @@ class ChatManager:
     def derive_title(self, prompt: str, objective: Optional[str] = None) -> str:
         """Derives a concise, professional 3-6 word title from user prompt or structured objective."""
         text = (objective if objective and len(objective.strip()) > 5 else prompt) or "New Conversation"
+        # Strip persistent memory blocks if present
+        if "======================================================================" in text:
+            parts = text.split("======================================================================")
+            if len(parts) >= 3:
+                text = parts[-1].strip()
+        if "[USER CURRENT DIRECTIVE / MODIFICATION REQUEST]:" in text:
+            text = text.split("[USER CURRENT DIRECTIVE / MODIFICATION REQUEST]:")[-1].strip()
         cleaned = text.strip()
         # Remove markdown symbols and common conversational prefixes
         cleaned = re.sub(r'[*_`#"\']', '', cleaned)

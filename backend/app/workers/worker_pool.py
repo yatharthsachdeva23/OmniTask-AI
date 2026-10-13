@@ -1101,16 +1101,20 @@ if __name__ == "__main__":
         if not compiled_content:
             compiled_content = f"# {task.title}\n\nComprehensive Deliverable prepared for: {objective}"
 
-        is_word_requested = any(w in (task.title + " " + task.description + " " + objective).lower() for w in [
-            "word doc", "word document", "docx", ".docx", "microsoft word", "word format", "in word", "as word"
-        ])
+        txt_lower = (task.title + " " + task.description + " " + objective).lower()
+        is_word_requested = any(w in txt_lower for w in [
+            "word doc", "word document", "docx", ".docx", "microsoft word", "word format",
+            "in word", "as word", "doc file", "doc files", "make doc", "doc format", ".doc"
+        ]) or bool(re.search(r'\b(?:doc|docx|word)\b', txt_lower))
 
         # Check if user requested separate files (Quiz questions in one file, Answer key in another)
-        wants_separate = any(w in (objective + " " + task.description + " " + task.title).lower() for w in [
+        wants_separate = any(w in txt_lower for w in [
             "separate file", "seperate file", "separate document", "seperate document",
             "separate doc", "seperate doc", "separate answer key", "seperate answer key",
             "answer key in separate", "answer key in seperate", "answers in separate",
-            "answers in seperate", "answer key separate", "answer key seperate"
+            "answers in seperate", "answer key separate", "answer key seperate",
+            "seperate pdf", "separate pdf", "seperate doc file", "separate doc file",
+            "both", "separate", "seperate"
         ])
 
         doc1_content, doc2_content = split_quiz_and_answer_key(compiled_content)
