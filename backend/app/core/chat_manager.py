@@ -64,7 +64,7 @@ class ChatManager:
         try:
             for file_path in self.chats_dir.glob("*.json"):
                 try:
-                    data = json.loads(file_path.read_text(encoding="utf-8"))
+                    data = json.loads(file_path.read_text(encoding="utf-8-sig"))
                     meta = ChatSessionMeta(
                         id=data.get("id", file_path.stem),
                         title=data.get("title", "Conversation"),
@@ -88,7 +88,7 @@ class ChatManager:
         if not file_path.exists():
             return None
         try:
-            data = json.loads(file_path.read_text(encoding="utf-8"))
+            data = json.loads(file_path.read_text(encoding="utf-8-sig"))
             return ChatSession(**data)
         except Exception as e:
             print(f"[ChatManager] Error loading chat {chat_id}: {e}")

@@ -34,6 +34,27 @@ class OmniOrchestrator:
         self.evaluator = FinalEvaluationAgent()
         self.replanner = DynamicSwarmReplanner(max_dynamic_additions=2)
 
+    async def _yield_heartbeats_until_done(
+        self,
+        task: asyncio.Task,
+        stage: str = "EXECUTING",
+        message: str = "Swarm specialists actively synthesizing deliverables...",
+        interval: float = 3.5
+    ) -> AsyncGenerator[str, None]:
+        """
+        Periodically yields keep-alive SSE events while awaiting background tasks.
+        Ensures cloud reverse proxies (e.g. Render, Cloudflare, Nginx) do not drop
+        long-running HTTP streaming connections due to idle timeouts.
+        """
+        while not task.done():
+            try:
+                await asyncio.wait_for(asyncio.shield(task), timeout=interval)
+            except asyncio.TimeoutError:
+                yield self._format_sse("HEARTBEAT", {
+                    "stage": stage,
+                    "message": message
+                })
+
     async def execute_stream(self, request: TaskRequest) -> AsyncGenerator[str, None]:
         session_id = f"omni_{uuid.uuid4().hex[:8]}"
 
@@ -67,6 +88,45 @@ class OmniOrchestrator:
             "user_message": user_msg.model_dump()
         })
 
+        try:
+            async for sse_chunk in self._execute_stream_internal(request, chat_session, session_id, chat_id):
+                yield sse_chunk
+        except Exception as err:
+            import traceback
+            traceback.print_exc()
+            error_msg = f"Workflow encountered an interruption: {str(err)}"
+            yield self._format_sse("STAGE_CHANGE", {
+                "stage": "ERROR",
+                "message": error_msg,
+                "session_id": session_id,
+                "chat_id": chat_id
+            })
+            try:
+                asst_msg = chat_manager.add_assistant_message(
+                    chat_id=chat_id,
+                    content=f"⚠️ **Execution Notice**\n\nThe autonomous swarm encountered an unexpected interruption while processing this directive:\n\n> {str(err)}\n\nPlease click **Retry Directive** below or re-send your message.",
+                    execution_data={"stage": "ERROR", "error": str(err)}
+                )
+                yield self._format_sse("CHAT_MESSAGE_COMPLETED", {
+                    "chat_id": chat_id,
+                    "message": asst_msg.model_dump()
+                })
+            except Exception as save_err:
+                print(f"[Orchestrator] Error saving fallback error message: {save_err}")
+
+            yield self._format_sse("EXECUTION_COMPLETED", {
+                "session_id": session_id,
+                "chat_id": chat_id,
+                "error": str(err)
+            })
+
+    async def _execute_stream_internal(
+        self,
+        request: TaskRequest,
+        chat_session,
+        session_id: str,
+        chat_id: str
+    ) -> AsyncGenerator[str, None]:
         # User identity & Dedicated Cross-Chat Persistent Memory
         user_id = getattr(request, "user_id", "default_user") or "default_user"
 
@@ -143,7 +203,10 @@ class OmniOrchestrator:
                 "plan_summary": request.approved_plan_summary or ""
             })
 
-        structured_goal = await self.structurer.structure_async(effective_prompt, request.files)
+        struct_fut = asyncio.create_task(self.structurer.structure_async(effective_prompt, request.files))
+        async for hb in self._yield_heartbeats_until_done(struct_fut, "STRUCTURING", "Decomposing objectives & analyzing attachments..."):
+            yield hb
+        structured_goal = struct_fut.result()
         
         # Intelligently update chat title with the clean extracted objective
         if structured_goal and structured_goal.primary_objective:
@@ -239,7 +302,14 @@ class OmniOrchestrator:
             await asyncio.sleep(0.6)
 
             # Worker executes
-            worker_result = await self.worker_pool.execute_task(task, context_packet)
+            worker_fut = asyncio.create_task(self.worker_pool.execute_task(task, context_packet))
+            async for hb in self._yield_heartbeats_until_done(
+                worker_fut,
+                "EXECUTING",
+                f"Worker ({task.assigned_worker_model or 'Specialist'}): Synthesizing '{task.title}'..."
+            ):
+                yield hb
+            worker_result = worker_fut.result()
             yield self._format_sse("WORKER_COMPLETED", {
                 "step_id": step_id,
                 "worker_result": worker_result.model_dump()
@@ -254,13 +324,20 @@ class OmniOrchestrator:
 
             await asyncio.sleep(0.5)
 
-            review_result, negative_knowledge = await self.review_engine.review_task(
+            review_fut = asyncio.create_task(self.review_engine.review_task(
                 task,
                 worker_result,
                 primary_objective=blackboard.original_prompt,
                 prior_outputs=context_packet.get("cumulative_prior_outputs", {}),
                 cumulative_handovers=context_packet.get("cumulative_handovers", {})
-            )
+            ))
+            async for hb in self._yield_heartbeats_until_done(
+                review_fut,
+                "EXECUTING",
+                f"Reviewer: Vetting '{task.title}' against quality standards..."
+            ):
+                yield hb
+            review_result, negative_knowledge = review_fut.result()
 
             # Autonomous Self-Correction Loop:
             # If reviewer marks score < 85% or passed is False, regenerate with new prompt from reviewer (max 5 times)
@@ -308,12 +385,19 @@ class OmniOrchestrator:
 
                 try:
                     # Re-execute worker using the new prompt from the reviewer
-                    worker_result = await self.worker_pool.execute_task(
+                    retry_worker_fut = asyncio.create_task(self.worker_pool.execute_task(
                         task,
                         context_packet,
                         override_prompt=regen_prompt,
                         attempt=attempt
-                    )
+                    ))
+                    async for hb in self._yield_heartbeats_until_done(
+                        retry_worker_fut,
+                        "EXECUTING",
+                        f"Auto-Correction ({attempt}/{max_attempts}): Refining '{task.title}'..."
+                    ):
+                        yield hb
+                    worker_result = retry_worker_fut.result()
                 except Exception as w_err:
                     print(f"[Orchestrator] Worker error during retry {attempt} on {task.title}: {w_err}")
                 
@@ -326,13 +410,20 @@ class OmniOrchestrator:
 
                 try:
                     # Re-review deliverable
-                    review_result, negative_knowledge = await self.review_engine.review_task(
+                    retry_rev_fut = asyncio.create_task(self.review_engine.review_task(
                         task,
                         worker_result,
                         primary_objective=blackboard.original_prompt,
                         prior_outputs=context_packet.get("cumulative_prior_outputs", {}),
                         cumulative_handovers=context_packet.get("cumulative_handovers", {})
-                    )
+                    ))
+                    async for hb in self._yield_heartbeats_until_done(
+                        retry_rev_fut,
+                        "EXECUTING",
+                        f"Auto-Correction ({attempt}/{max_attempts}): Re-evaluating '{task.title}'..."
+                    ):
+                        yield hb
+                    review_result, negative_knowledge = retry_rev_fut.result()
                 except Exception as r_err:
                     print(f"[Orchestrator] Review error during retry {attempt} on {task.title}: {r_err}")
 
@@ -515,4 +606,4 @@ class OmniOrchestrator:
             "event": event_name,
             "data": data
         }
-        return f"event: message\ndata: {json.dumps(payload)}\n\n"
+        return f"event: message\ndata: {json.dumps(payload, default=str)}\n\n"

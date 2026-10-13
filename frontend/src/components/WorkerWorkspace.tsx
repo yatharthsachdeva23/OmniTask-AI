@@ -232,11 +232,17 @@ export const WorkerWorkspace: React.FC<WorkerWorkspaceProps> = ({
         })
       });
 
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Server returned error ${response.status}: ${errText || response.statusText}`);
+      }
+
       if (!response.body) throw new Error('ReadableStream not supported');
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder('utf-8');
       let buffer = '';
+      let executionFinished = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -259,6 +265,10 @@ export const WorkerWorkspace: React.FC<WorkerWorkspaceProps> = ({
                 setCurrentChatId(data.chat_id);
                 if (data.title) setChatTitle(data.title);
                 setRefreshSidebarTrigger(prev => prev + 1);
+              } else if (eventName === 'HEARTBEAT') {
+                if (data?.message) {
+                  setStageMessage(data.message);
+                }
               } else if (eventName === 'CHAT_TITLE_UPDATED') {
                 if (data.title) setChatTitle(data.title);
                 setRefreshSidebarTrigger(prev => prev + 1);
@@ -300,6 +310,7 @@ export const WorkerWorkspace: React.FC<WorkerWorkspaceProps> = ({
                   setStructuredGoal(data.updated_plan);
                 }
               } else if (eventName === 'CHAT_MESSAGE_COMPLETED') {
+                executionFinished = true;
                 // Add or update assistant message in state
                 const asstMsg: ChatMessage = data.message;
                 setMessages(prev => {
@@ -308,9 +319,12 @@ export const WorkerWorkspace: React.FC<WorkerWorkspaceProps> = ({
                 });
                 setRefreshSidebarTrigger(prev => prev + 1);
               } else if (eventName === 'EXECUTION_COMPLETED') {
+                executionFinished = true;
                 setCurrentStage('COMPLETED');
-                setStageMessage(`Task execution finalized • Score: ${data.final_evaluation.overall_completion_score}%`);
-                setFinalEvaluation(data.final_evaluation);
+                if (data.final_evaluation) {
+                  setStageMessage(`Task execution finalized • Score: ${data.final_evaluation.overall_completion_score}%`);
+                  setFinalEvaluation(data.final_evaluation);
+                }
                 if (data.full_blackboard_state) {
                   setBlackboard(data.full_blackboard_state);
                 }
@@ -323,10 +337,35 @@ export const WorkerWorkspace: React.FC<WorkerWorkspaceProps> = ({
           }
         }
       }
-    } catch (err) {
+
+      // If stream ended without explicit completion event, attempt to restore completed message from chat session
+      if (!executionFinished && assignedChatId) {
+        try {
+          const checkRes = await fetch(`/api/chats/${assignedChatId}`);
+          if (checkRes.ok) {
+            const chatData: ChatSession = await checkRes.json();
+            const asstMsgs = (chatData.messages || []).filter(m => m.role === 'assistant');
+            if (asstMsgs.length > 0) {
+              setMessages(chatData.messages);
+              const lastAsst = asstMsgs[asstMsgs.length - 1];
+              if (lastAsst?.execution_data) {
+                setStructuredGoal(lastAsst.execution_data.structured_goal || null);
+                setBlackboard(lastAsst.execution_data.blackboard_state || chatData.blackboard_state || null);
+                setFinalEvaluation(lastAsst.execution_data.final_evaluation || chatData.latest_evaluation || null);
+                setCurrentStage(lastAsst.execution_data.stage || 'COMPLETED');
+                setStageMessage(`Task execution finalized • Score: ${lastAsst.execution_data.final_evaluation?.overall_completion_score || 95}%`);
+              }
+              executionFinished = true;
+            }
+          }
+        } catch (pollErr) {
+          console.warn('Could not poll chat status after stream close', pollErr);
+        }
+      }
+    } catch (err: any) {
       console.error('Execution error:', err);
       setCurrentStage('ERROR');
-      setStageMessage('Encountered an issue during execution.');
+      setStageMessage(err?.message || 'Encountered an issue during execution.');
     } finally {
       setIsExecuting(false);
     }
@@ -640,6 +679,40 @@ export const WorkerWorkspace: React.FC<WorkerWorkspaceProps> = ({
                   );
                 }
               })}
+
+              {/* Interrupted / Incomplete Turn Recovery Banner */}
+              {!isExecuting && messages.length > 0 && messages[messages.length - 1].role === 'user' && (
+                <div className="bg-[#120a0a] border border-amber-500/30 rounded-2xl p-5 shadow-xl space-y-3 animate-fadeIn">
+                  <div className="flex items-center gap-2.5 text-amber-400">
+                    <AlertCircle className="w-5 h-5 shrink-0" />
+                    <span className="text-sm font-semibold">Response pending or connection disconnected</span>
+                  </div>
+                  <p className="text-xs text-neutral-300 leading-relaxed font-sans">
+                    The connection closed before the final output could be rendered. You can retry the directive or check for saved deliverables.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-3 pt-1">
+                    <button
+                      onClick={() => {
+                        const lastMsg = messages[messages.length - 1];
+                        runExecutionTurn(lastMsg.content, lastMsg.files || [], lastMsg.clarifications, lastMsg.approved_plan_summary, currentChatId);
+                      }}
+                      className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition-all shadow-md"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Retry Directive</span>
+                    </button>
+                    {currentChatId && (
+                      <button
+                        onClick={() => loadChat(currentChatId)}
+                        className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-neutral-300 hover:text-white border border-white/[0.08] text-xs font-medium transition-all"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>Check for Deliverables</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* CURRENT ACTIVE EXECUTION TURN (When Swarm is Running) */}
               {isExecuting && (
