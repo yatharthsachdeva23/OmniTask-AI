@@ -448,26 +448,6 @@ class OmniOrchestrator:
 
         full_content = "\n\n---\n\n".join(deliverable_texts) if deliverable_texts else (evaluation.summary_for_user or "Verified deliverables generated successfully.")
 
-        # Ensure any domain-specific bonus assets are seamlessly integrated into the single unified deliverable
-        starter_pack = getattr(evaluation, "complimentary_starter_pack", {}) or {}
-        if starter_pack and isinstance(starter_pack, dict):
-            bonus_parts = []
-            pilot = starter_pack.get("pilot_starter_script", "").strip()
-            if pilot and "Executive Strategic Briefing Matrix" not in pilot and "Barnaby" not in pilot:
-                bonus_parts.append(f"### Sample Pilot Starter Script\n\n```\n{pilot}\n```")
-            audio = starter_pack.get("sensory_and_audio_formula", "").strip()
-            if audio and "1-Page Executive Summary" not in audio:
-                bonus_parts.append(f"### Sensory & Audio Pacing Formula\n\n{audio}")
-            visual = starter_pack.get("visual_style_and_thumbnail_prompt", "").strip()
-            if visual and "executive presentation infographic poster" not in visual:
-                bonus_parts.append(f"### Visual Style & Framing Prompt\n\n{visual}")
-            checklist = starter_pack.get("retention_and_launch_checklist", [])
-            if checklist and isinstance(checklist, list) and len(checklist) > 0 and "Verify all baseline data inputs" not in checklist[0]:
-                bonus_parts.append("### Pre-Flight Launch Checklist\n\n" + "\n".join([f"- [ ] {item}" for item in checklist]))
-            if bonus_parts:
-                bonus_block = "\n\n---\n\n## Bonus Implementation Assets & Pilot Kit\n\n" + "\n\n".join(bonus_parts)
-                full_content = f"{full_content}\n\n{bonus_block}"
-
         # Auto-compile PDF deliverable if no PDF exists yet, so user has a clean PDF download option
         try:
             from app.utils.pdf_generator import markdown_to_pdf

@@ -74,18 +74,13 @@ class AIAdvisorEngine:
         if delivery_mode in ["smart", "overdeliver"]:
             overdeliver_rule = (
                 "5. PROACTIVE ANTICIPATORY INTELLIGENCE (SMART MODE ACTIVATED):\n"
-                "   The user has selected 'Smart Mode'. Beyond fulfilling their core request, you MUST anticipate their blind spots and provide valuable complimentary starter assets:\n"
-                "   - 'anticipated_blind_spots': A list of 4-6 critical domain gotchas the user didn't explicitly think to ask about (e.g. audience psychology, hidden regulatory/COPPA pitfalls, pacing and audio retention drivers, sensory overload, common beginner mistakes).\n"
-                "   - 'complimentary_starter_pack': A dictionary containing high-value bonus assets tailored to their goal:\n"
-                "     * 'pilot_starter_script': A ready-to-use 60-second pilot script or starter template.\n"
-                "     * 'sensory_and_audio_formula': Exact recommended music style, BPM, voice cadence, and audio cues.\n"
-                "     * 'visual_style_and_thumbnail_prompt': Exact Midjourney/Flux prompt for a high-CTR thumbnail or character key visual.\n"
-                "     * 'retention_and_launch_checklist': 4-5 bullet points of crucial do's and don'ts before publishing.\n\n"
+                "   The user has selected 'Smart Mode'. Beyond fulfilling their core request, you MUST anticipate their blind spots and domain gotchas:\n"
+                "   - 'anticipated_blind_spots': A list of 4-6 critical domain gotchas and blind spots the user didn't explicitly think to ask about (e.g. audience psychology, hidden regulatory/compliance pitfalls, pacing drivers, common beginner mistakes, data hygiene, unaddressed edge cases).\n\n"
             )
         else:
             overdeliver_rule = (
                 "5. STRICT DIRECT EXECUTION MODE:\n"
-                "   The user has selected 'Strict Mode'. Deliver strictly and concisely only what was asked. Leave 'anticipated_blind_spots' as an empty array [] and 'complimentary_starter_pack' as an empty dictionary {}.\n\n"
+                "   The user has selected 'Strict Mode'. Deliver strictly and concisely only what was asked. Leave 'anticipated_blind_spots' as an empty array [].\n\n"
             )
 
         return (
@@ -152,16 +147,7 @@ class AIAdvisorEngine:
             '  "anticipated_blind_spots": [\n'
             '    "Anticipated Gotcha 1 (What the user did not think to ask)...",\n'
             '    "Anticipated Gotcha 2..."\n'
-            "  ],\n"
-            '  "complimentary_starter_pack": {\n'
-            '    "pilot_starter_script": "Ready-to-use starter template or pilot script tailored to goal",\n'
-            '    "sensory_and_audio_formula": "Exact music style, BPM, and voice cadence",\n'
-            '    "visual_style_and_thumbnail_prompt": "Midjourney/Flux prompt for key visual or thumbnail",\n'
-            '    "retention_and_launch_checklist": [\n'
-            '      "Checklist item 1...",\n'
-            '      "Checklist item 2..."\n'
-            "    ]\n"
-            "  }\n"
+            "  ]\n"
             "}"
         )
 
@@ -308,68 +294,6 @@ class AIAdvisorEngine:
                 "Downstream Dependency Risk: Failing to define handoff contracts between phases causes bottleneck delays during handoffs."
             ]
 
-    def _generate_default_starter_pack(self, user_query: str) -> Dict[str, Any]:
-        q = user_query.lower()
-        if any(w in q for w in ["kids", "child", "children", "toddler", "youtube kids", "yt kids"]):
-            return {
-                "pilot_starter_script": (
-                    "Title: The Magic Cloud's Raindrop Adventure (60s Pilot)\n\n"
-                    "[Visual: Vibrant, high-contrast 3D animated scene opens with a fluffy smiling cloud floating over green rolling hills]\n"
-                    "NARRATOR (Enthusiastic, playful, 135 WPM):\n"
-                    "\"Hello little explorers! Look up at the sky... Can you see the puffy white cloud? [Bell chime: Ding!]\n"
-                    "Meet Barnaby the Cloud! Today, Barnaby is full of tiny water drops. Let's count them together: 1... 2... 3! SPLASH! [Cheerful splash sound effect]\n"
-                    "Barnaby is bringing gentle rain to help the baby flowers grow! Can you wiggle your fingers like falling rain? Pitter-patter, pitter-patter!\n"
-                    "Great job! Barnaby is smiling! See you on our next weather adventure!\" [Cheerful outro chord]"
-                ),
-                "sensory_and_audio_formula": (
-                    "- Voice Profile: Warm, energetic maternal/paternal tone with dynamic pitch variation, 135-140 WPM.\n"
-                    "- Music Bed: Cheerful acoustic ukulele and bright xylophone, 115 BPM, master mix at -18dB under speech.\n"
-                    "- Sound Effects Palette: Organic soft bubble pops, pleasant rain trickles, gentle bell rings (avoid harsh buzzers)."
-                ),
-                "visual_style_and_thumbnail_prompt": (
-                    "Midjourney v6.1 Prompt: /imagine prompt: Vibrant 3D Pixar animation style, joyful smiling puffy cloud character holding a golden watering can, bright rainbow and green rolling hills in background, big curious expressive eyes, 8k resolution, cinematic soft lighting, 16:9 aspect ratio --ar 16:9 --v 6.1"
-                ),
-                "retention_and_launch_checklist": [
-                    "Always configure the COPPA rating to 'Yes, it's Made for Kids' in YouTube Studio upload defaults.",
-                    "Ensure voiceover repeats the central concept phrase at least 3 times in distinct scenes.",
-                    "Keep visual scene cuts between 2.0 to 3.0 seconds to maintain high toddler engagement.",
-                    "Test audio mix on phone and tablet speakers at 50% volume to ensure narration clarity."
-                ]
-            }
-        elif any(w in q for w in ["trading", "crypto", "finance", "bot", "algorithm", "stock", "arbitrage"]):
-            return {
-                "pilot_starter_script": (
-                    "# Python 3.12 Resilient Trading Loop Boilerplate with Backoff\n"
-                    "import asyncio, time\n\n"
-                    "class ResilientOrderExecutor:\n"
-                    "    def __init__(self, max_retries=3, risk_limit_pct=1.5):\n"
-                    "        self.max_retries = max_retries\n"
-                    "        self.risk_limit_pct = risk_limit_pct\n\n"
-                    "    async def execute_order_with_backoff(self, symbol, side, qty):\n"
-                    "        for attempt in range(1, self.max_retries + 1):\n"
-                    "            try:\n"
-                    "                print(f'[Order] {side} {qty} {symbol} (Attempt {attempt})')\n"
-                    "                return {'status': 'FILLED', 'symbol': symbol, 'qty': qty}\n"
-                    "            except Exception as e:\n"
-                    "                await asyncio.sleep(2 ** attempt)\n"
-                    "        raise RuntimeError('Max order placement retries exhausted.')\n"
-                ),
-                "sensory_and_audio_formula": (
-                    "- Risk Management Mandate: Never risk exceeding 1.5% of total portfolio equity per position.\n"
-                    "- Order Execution: Enforce hard server-side stop losses rather than relying on local client triggers.\n"
-                    "- Telemetry: Log slippage coefficients between expected quote and final fill price."
-                ),
-                "visual_style_and_thumbnail_prompt": (
-                    "Ideogram 2.0 Prompt: Clean dark mode algorithmic trading analytics dashboard UI, glowing neon emerald candlestick charts, glassmorphism telemetry widgets, 8k resolution, modern typography."
-                ),
-                "retention_and_launch_checklist": [
-                    "Verify paper trading performance across a minimum of 1,000 simulated trades before capital deployment.",
-                    "Isolate API secret keys inside encrypted environment variables with IP whitelisting enabled.",
-                    "Configure automated Discord or Telegram webhook alerts on all critical exception handlers."
-                ]
-            }
-        else:
-            return {}
 
     def _parse_to_advisor_response(self, user_query: str, parsed: Dict[str, Any], delivery_mode: str = "overdeliver") -> AdvisorResponse:
         """
@@ -597,9 +521,8 @@ class AIAdvisorEngine:
                     "expected_output": expected
                 })
 
-        # 6. Extract Anticipated Blind Spots and Complimentary Starter Pack
+        # 6. Extract Anticipated Blind Spots
         anticipated_blind_spots: List[str] = []
-        complimentary_starter_pack: Dict[str, Any] = {}
 
         if delivery_mode in ["smart", "overdeliver"]:
             raw_spots = parsed.get("anticipated_blind_spots") or parsed.get("blind_spots") or []
@@ -607,15 +530,8 @@ class AIAdvisorEngine:
                 anticipated_blind_spots = [str(s) for s in raw_spots if s]
             else:
                 anticipated_blind_spots = self._generate_default_blind_spots(user_query)
-
-            raw_pack = parsed.get("complimentary_starter_pack") or parsed.get("starter_pack") or {}
-            if isinstance(raw_pack, dict) and raw_pack:
-                complimentary_starter_pack = raw_pack
-            else:
-                complimentary_starter_pack = self._generate_default_starter_pack(user_query)
         else:
             anticipated_blind_spots = []
-            complimentary_starter_pack = {}
 
         return AdvisorResponse(
             original_query=user_query,
@@ -624,7 +540,6 @@ class AIAdvisorEngine:
             diy_execution_blueprint=formatted_blueprints,
             delivery_mode="smart" if delivery_mode in ["smart", "overdeliver"] else "strict",
             anticipated_blind_spots=anticipated_blind_spots,
-            complimentary_starter_pack=complimentary_starter_pack
         )
 
     def _deterministic_fallback(self, user_query: str, delivery_mode: str = "smart") -> AdvisorResponse:
@@ -634,7 +549,7 @@ class AIAdvisorEngine:
         2. Top 1 AI per capability
         3. Multi-phase deduplication with phase badges & phase prompts
         4. Clear handoff placeholders without hallucinations
-        5. Anticipatory intelligence & starter pack in overdeliver mode
+        5. Anticipatory intelligence in overdeliver mode
         """
         from app.models.schemas import PhasePrompt
 
@@ -910,7 +825,6 @@ class AIAdvisorEngine:
 
         is_smart_mode = delivery_mode in ["smart", "overdeliver"]
         anticipated_blind_spots = self._generate_default_blind_spots(user_query) if is_smart_mode else []
-        complimentary_starter_pack = self._generate_default_starter_pack(user_query) if is_smart_mode else {}
 
         return AdvisorResponse(
             original_query=user_query,
@@ -919,7 +833,6 @@ class AIAdvisorEngine:
             diy_execution_blueprint=diy_blueprint,
             delivery_mode="smart" if is_smart_mode else "strict",
             anticipated_blind_spots=anticipated_blind_spots,
-            complimentary_starter_pack=complimentary_starter_pack
         )
 
 advisor_engine = AIAdvisorEngine()

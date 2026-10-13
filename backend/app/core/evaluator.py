@@ -80,13 +80,11 @@ class FinalEvaluationAgent:
                 "artifacts": worker_res.artifacts
             }
 
-        # Anticipatory Intelligence & Complimentary Starter Pack
+        # Anticipatory Intelligence
         anticipated_blind_spots: List[str] = []
-        complimentary_starter_pack: Dict[str, Any] = {}
         is_smart_mode = delivery_mode in ["smart", "overdeliver"]
         if is_smart_mode:
             anticipated_blind_spots = advisor_engine._generate_default_blind_spots(prompt)
-            complimentary_starter_pack = advisor_engine._generate_default_starter_pack(prompt)
 
         if completion_score >= 60:
             if is_smart_mode:
@@ -118,5 +116,4 @@ class FinalEvaluationAgent:
             deliverables=deliverables,
             delivery_mode=delivery_mode,
             anticipated_blind_spots=anticipated_blind_spots,
-            complimentary_starter_pack=complimentary_starter_pack
         )

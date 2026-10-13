@@ -65,14 +65,6 @@ export interface NegativeKnowledgeItem {
 
 export type DeliveryMode = 'smart' | 'strict' | 'overdeliver';
 
-export interface ComplimentaryStarterPack {
-  pilot_starter_script?: string;
-  sensory_and_audio_formula?: string;
-  visual_style_and_thumbnail_prompt?: string;
-  retention_and_launch_checklist?: string[];
-  [key: string]: any;
-}
-
 export interface FinalEvaluationResult {
   overall_completion_score: number;
   compliance_breakdown: Record<string, number>;
@@ -81,7 +73,6 @@ export interface FinalEvaluationResult {
   deliverables: Record<string, any>;
   delivery_mode?: DeliveryMode;
   anticipated_blind_spots?: string[];
-  complimentary_starter_pack?: ComplimentaryStarterPack;
 }
 
 export interface BlackboardSnapshot {
@@ -134,7 +125,6 @@ export interface AdvisorResponse {
   }>;
   delivery_mode?: DeliveryMode;
   anticipated_blind_spots?: string[];
-  complimentary_starter_pack?: ComplimentaryStarterPack;
 }
 
 export interface PlanClarifyingQuestion {

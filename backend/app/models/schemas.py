@@ -118,7 +118,6 @@ class FinalEvaluationResult(BaseModel):
     deliverables: Dict[str, Any] = Field(default_factory=dict)
     delivery_mode: str = "smart"  # "smart" or "strict"
     anticipated_blind_spots: List[str] = Field(default_factory=list)
-    complimentary_starter_pack: Dict[str, Any] = Field(default_factory=dict)
 
 # Track 1 Models
 class PhasePrompt(BaseModel):
@@ -145,7 +144,6 @@ class AdvisorResponse(BaseModel):
     diy_execution_blueprint: List[Dict[str, Any]]
     delivery_mode: str = "smart"  # "smart" or "strict"
     anticipated_blind_spots: List[str] = Field(default_factory=list)
-    complimentary_starter_pack: Dict[str, Any] = Field(default_factory=dict)
 
 # Interactive Planning Models (Ask Before Doing)
 class PlanClarifyingQuestion(BaseModel):
