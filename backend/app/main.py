@@ -20,7 +20,7 @@ from app.advisor.recommender import AIAdvisorEngine
 from app.advisor.tools_catalog import AI_TOOLS_CATALOG
 from app.orchestrator import OmniOrchestrator
 from app.core.interactive_planner import InteractivePlannerAgent
-from app.core.hermes_memory import hermes_memory
+from app.core.persistent_memory import persistent_memory
 
 app = FastAPI(
     title="OmniTask AI API",
@@ -138,7 +138,7 @@ async def create_chat(payload: Optional[dict] = None):
     user_id = (payload or {}).get("user_id", "default_user") or "default_user"
     # Initiate autonomous persistent memory consolidation from all previous chats the moment a new chat begins
     try:
-        await hermes_memory.consolidate_from_all_chats(user_id=user_id)
+        await persistent_memory.consolidate_from_all_chats(user_id=user_id)
     except Exception as mem_err:
         print(f"[Main] Persistent memory consolidation notice on new chat: {mem_err}")
     return chat_manager.create_chat(title=title, delivery_mode=mode)
@@ -156,19 +156,19 @@ async def clear_all_chats():
 @app.get("/api/user/memory")
 async def get_user_memory(user_id: str = "default_user"):
     """Fetches the user's dedicated persistent memory."""
-    return hermes_memory.get_user_memory(user_id)
+    return persistent_memory.get_user_memory(user_id)
 
 @app.post("/api/user/memory/consolidate")
 async def consolidate_user_memory(payload: Optional[dict] = None):
     """Triggers autonomous consolidation of memory across all previous chats."""
     user_id = (payload or {}).get("user_id", "default_user") or "default_user"
-    updated = await hermes_memory.consolidate_from_all_chats(user_id)
+    updated = await persistent_memory.consolidate_from_all_chats(user_id)
     return {"status": "success", "memory": updated}
 
 @app.delete("/api/user/memory")
 async def clear_user_memory(user_id: str = "default_user"):
     """Resets the user's dedicated persistent memory."""
-    success = hermes_memory.clear_user_memory(user_id)
+    success = persistent_memory.clear_user_memory(user_id)
     return {"status": "success" if success else "failed"}
 
 @app.get("/api/chats/{chat_id}", response_model=ChatSession)

@@ -220,7 +220,7 @@ OmniTask-AI/
 │   │   │   ├── blackboard.py         # Common Context Window, State Registry & Avoidance Rules
 │   │   │   ├── chat_manager.py       # Multi-turn chat session & metadata management
 │   │   │   ├── context_rag.py        # Backward waterfall matcher & contrast amplification RAG
-│   │   │   ├── hermes_memory.py      # Dedicated Persistent Global Memory Engine
+│   │   │   ├── persistent_memory.py  # Dedicated Persistent Global Memory Engine
 │   │   │   ├── interactive_planner.py# System 2 planning & user clarification gates
 │   │   │   ├── dynamic_replanner.py  # Adaptive DAG replenishment & swarm expansion
 │   │   │   ├── evaluator.py          # Final completion scoring & packaging

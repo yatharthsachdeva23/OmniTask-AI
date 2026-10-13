@@ -1,5 +1,5 @@
 """
-Hermes Memory Engine: Autonomous Persistent Cross-Chat Memory Manager for OmniTask AI.
+Persistent Memory Engine: Autonomous Persistent Cross-Chat Memory Manager for OmniTask AI.
 
 Dedicated memory space common to ALL chats and unique to each user.
 Self-updating, enduring memory that selectively preserves:
@@ -25,9 +25,9 @@ import httpx
 from app.config import config
 from app.models.schemas import ChatSession, ChatMessage
 
-class HermesMemoryManager:
+class PersistentMemoryManager:
     """
-    Autonomous Cross-Chat Hermes Memory Manager.
+    Autonomous Cross-Chat Persistent Memory Manager.
     Maintains a dedicated, persistent JSON profile per user in uploads/memory/.
     """
     def __init__(self, memory_dir: Optional[Path] = None):
@@ -41,10 +41,10 @@ class HermesMemoryManager:
 
     def _get_memory_file(self, user_id: str = "default_user") -> Path:
         safe_user_id = re.sub(r'[^a-zA-Z0-9_-]', '_', user_id or "default_user")
-        return self.memory_dir / f"{safe_user_id}_hermes_memory.json"
+        return self.memory_dir / f"{safe_user_id}_persistent_memory.json"
 
     def get_user_memory(self, user_id: str = "default_user") -> Dict[str, Any]:
-        """Loads the dedicated persistent Hermes Memory for the specified user."""
+        """Loads the dedicated persistent memory for the specified user."""
         file_path = self._get_memory_file(user_id)
         if not file_path.exists():
             return {
@@ -59,7 +59,7 @@ class HermesMemoryManager:
         try:
             return json.loads(file_path.read_text(encoding="utf-8"))
         except Exception as e:
-            print(f"[HermesMemory] Error reading memory for {user_id}: {e}")
+            print(f"[PersistentMemory] Error reading memory for {user_id}: {e}")
             return {
                 "user_id": user_id,
                 "created_at": time.time(),
@@ -71,13 +71,13 @@ class HermesMemoryManager:
             }
 
     def save_user_memory(self, user_id: str, memory_data: Dict[str, Any]):
-        """Persists the user's Hermes Memory to disk."""
+        """Persists the user's persistent memory to disk."""
         file_path = self._get_memory_file(user_id)
         memory_data["updated_at"] = time.time()
         try:
             file_path.write_text(json.dumps(memory_data, indent=2, ensure_ascii=False), encoding="utf-8")
         except Exception as e:
-            print(f"[HermesMemory] Error saving memory for {user_id}: {e}")
+            print(f"[PersistentMemory] Error saving memory for {user_id}: {e}")
 
     def clear_user_memory(self, user_id: str = "default_user") -> bool:
         """Resets the user's persistent memory."""
@@ -87,7 +87,7 @@ class HermesMemoryManager:
                 file_path.unlink()
                 return True
             except Exception as e:
-                print(f"[HermesMemory] Error deleting memory file: {e}")
+                print(f"[PersistentMemory] Error deleting memory file: {e}")
                 return False
         return True
 
@@ -102,7 +102,7 @@ class HermesMemoryManager:
 
     def format_memory_for_prompt(self, user_id: str = "default_user") -> str:
         """
-        Renders the active Hermes Memory as an authoritative directive block
+        Renders the active persistent memory as an authoritative directive block
         to be injected as the first thing into new chats.
         """
         mem = self.get_user_memory(user_id)
@@ -256,7 +256,7 @@ class HermesMemoryManager:
                         if isinstance(data, dict):
                             return data
             except Exception as e:
-                print(f"[HermesMemory] Gemini extraction note: {e}. Trying Groq fallback.")
+                print(f"[PersistentMemory] Gemini extraction note: {e}. Trying Groq fallback.")
 
         # 2. Try Groq
         if self.groq_key:
@@ -284,7 +284,7 @@ class HermesMemoryManager:
                         if isinstance(data, dict):
                             return data
             except Exception as e:
-                print(f"[HermesMemory] Groq extraction note: {e}")
+                print(f"[PersistentMemory] Groq extraction note: {e}")
 
         return None
 
@@ -392,7 +392,7 @@ class HermesMemoryManager:
         """
         Fast incremental inspection after a message turn.
         If user explicitly reveals identity/business or a permanent rule,
-        immediately registers it into Hermes Memory.
+        immediately registers it into Persistent Memory.
         """
         if self.is_ephemeral_request(user_prompt):
             return None
@@ -417,4 +417,4 @@ class HermesMemoryManager:
             return mem
         return None
 
-hermes_memory = HermesMemoryManager()
+persistent_memory = PersistentMemoryManager()

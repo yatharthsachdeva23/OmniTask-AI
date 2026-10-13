@@ -73,7 +73,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
         setMemoryData(data);
       }
     } catch (err) {
-      console.error('Error fetching Hermes memory:', err);
+      console.error('Error fetching persistent memory:', err);
     }
   };
 

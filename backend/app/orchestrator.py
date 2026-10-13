@@ -18,7 +18,7 @@ from app.core.evaluator import FinalEvaluationAgent
 from app.core.dynamic_replanner import DynamicSwarmReplanner
 from app.core.chat_manager import chat_manager
 from app.core.context_rag import ChatContextRAG
-from app.core.hermes_memory import hermes_memory
+from app.core.persistent_memory import persistent_memory
 
 class OmniOrchestrator:
     """
@@ -67,17 +67,17 @@ class OmniOrchestrator:
             "user_message": user_msg.model_dump()
         })
 
-        # User identity & Dedicated Cross-Chat Hermes Memory
+        # User identity & Dedicated Cross-Chat Persistent Memory
         user_id = getattr(request, "user_id", "default_user") or "default_user"
 
         # When a new chat starts, initiate autonomous consolidation across past chats
         if len(chat_session.messages) <= 1:
             try:
-                await hermes_memory.consolidate_from_all_chats(user_id=user_id)
+                await persistent_memory.consolidate_from_all_chats(user_id=user_id)
             except Exception as mem_err:
-                print(f"[Orchestrator] Hermes consolidation notice: {mem_err}")
+                print(f"[Orchestrator] Persistent memory consolidation notice: {mem_err}")
 
-        user_memory_block = hermes_memory.format_memory_for_prompt(user_id)
+        user_memory_block = persistent_memory.format_memory_for_prompt(user_id)
         if user_memory_block:
             yield self._format_sse("USER_GLOBAL_MEMORY_APPLIED", {
                 "user_id": user_id,
@@ -85,7 +85,7 @@ class OmniOrchestrator:
                 "message": "Loaded dedicated persistent memory: user profile & business context applied."
             })
 
-        # Construct effective prompt including Hermes memory, user-approved plan, clarifications, and prior turns
+        # Construct effective prompt including persistent memory, user-approved plan, clarifications, and prior turns
         effective_prompt = request.prompt
         clarifications_list = []
         if request.user_clarifications:
@@ -105,7 +105,7 @@ class OmniOrchestrator:
         if context_package.get("has_prior_context"):
             effective_prompt = f"{context_package['formatted_context_block']}[USER CURRENT DIRECTIVE / MODIFICATION REQUEST]:\n{effective_prompt}"
 
-        # Prepend dedicated Hermes Memory as the foundational first block
+        # Prepend dedicated Persistent Memory as the foundational first block
         if user_memory_block:
             effective_prompt = f"{user_memory_block}\n\n{effective_prompt}"
 
@@ -502,9 +502,9 @@ class OmniOrchestrator:
             latest_evaluation=evaluation.model_dump()
         )
 
-        # Incrementally update Hermes Memory if user disclosed persistent business/identity/rules
+        # Incrementally update Persistent Memory if user disclosed persistent business/identity/rules
         try:
-            updated_mem = hermes_memory.inspect_and_update_from_message(
+            updated_mem = persistent_memory.inspect_and_update_from_message(
                 user_id=user_id,
                 user_prompt=request.prompt,
                 assistant_response=full_content,
@@ -513,7 +513,7 @@ class OmniOrchestrator:
             if updated_mem:
                 yield self._format_sse("USER_GLOBAL_MEMORY_UPDATED", {
                     "user_id": user_id,
-                    "message": "Hermes Memory self-updated: new durable facts preserved for future chats."
+                    "message": "Persistent Memory self-updated: new durable facts preserved for future chats."
                 })
         except Exception as mem_up_err:
             print(f"[Orchestrator] Incremental memory update notice: {mem_up_err}")

@@ -89,10 +89,10 @@ class CommonContextBlackboard:
             self._log_audit("CHAT_CONTEXT_ATTACHED", "Chat context package & RAG memory attached to blackboard")
 
     def set_user_global_memory(self, memory_text: str):
-        """Attaches persistent Hermes user memory across all chats."""
+        """Attaches persistent user memory across all chats."""
         self.user_global_memory = memory_text or ""
         if self.user_global_memory:
-            self._log_audit("HERMES_MEMORY_ATTACHED", "Persistent cross-chat user memory attached to blackboard")
+            self._log_audit("PERSISTENT_MEMORY_ATTACHED", "Persistent cross-chat user memory attached to blackboard")
 
     def get_context_for_subagent(self, step_id: str) -> Dict[str, Any]:
         """
