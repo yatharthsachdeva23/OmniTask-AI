@@ -9,11 +9,19 @@ services:
     environment:
       - PORT=8000
       - HOST=0.0.0.0
+      - BEAT_API_KEY=${BEAT_API_KEY:-}
+      - BEAT_API_SYSTEMONE_URL=${BEAT_API_SYSTEMONE_URL:-https://api.beatapi.io/v1/systemone}
+      - JEV_MODEL=${JEV_MODEL:-jev-1.13-free}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - GROQ_API_KEY=${GROQ_API_KEY:-}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - MISTRAL_API_KEY=${MISTRAL_API_KEY:-}
-      - VERCEL_JEV_API_KEY=${VERCEL_JEV_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - VERCEL_API_KEY=${VERCEL_API_KEY:-}
+      - OLLAMA_API_KEY=${OLLAMA_API_KEY:-}
+      - HF_TOKEN=${HF_TOKEN:-}
+      - SUNO_API_KEY=${SUNO_API_KEY:-}
+      - KLING_ACCESS_KEY=${KLING_ACCESS_KEY:-}
+      - KLING_SECRET_KEY=${KLING_SECRET_KEY:-}
+      - ZHIPU_API_KEY=${ZHIPU_API_KEY:-}
     volumes:
       - omnitask_uploads:/app/backend/uploads
     restart: unless-stopped
