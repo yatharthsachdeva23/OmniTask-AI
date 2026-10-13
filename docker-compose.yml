@@ -1,0 +1,22 @@
+services:
+  omnitask-ai:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: omnitask-ai
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - HOST=0.0.0.0
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - MISTRAL_API_KEY=${MISTRAL_API_KEY:-}
+      - VERCEL_JEV_API_KEY=${VERCEL_JEV_API_KEY:-}
+    volumes:
+      - omnitask_uploads:/app/backend/uploads
+    restart: unless-stopped
+
+volumes:
+  omnitask_uploads:
