@@ -61,6 +61,18 @@ class NumberedCanvas(canvas.Canvas):
         self.restoreState()
 
 
+def strip_outer_markdown_fences(text: str) -> str:
+    """Safely strips artificial markdown code block wrappers (e.g. ```markdown ... ``` or dangling ```)."""
+    if not text:
+        return ""
+    lines = text.splitlines()
+    while lines and (re.match(r"^```(?:markdown|md|text|txt)?\s*$", lines[0].strip(), re.IGNORECASE) or not lines[0].strip()):
+        lines.pop(0)
+    while lines and (re.match(r"^```\s*$", lines[-1].strip()) or not lines[-1].strip()):
+        lines.pop()
+    return "\n".join(lines).strip()
+
+
 def clean_markdown_for_reportlab(text: str) -> str:
     """
     Sanitizes markdown tags into ReportLab compatible XML tags.
@@ -151,7 +163,7 @@ def markdown_to_pdf(
         ]):
             continue
         clean_lines_list.append(l)
-    markdown_content = '\n'.join(clean_lines_list)
+    markdown_content = strip_outer_markdown_fences('\n'.join(clean_lines_list))
 
     # Derive clean title if generic or pipeline title was provided
     if not title or any(b in title.lower() for b in ["omnitask", "compilation", "sub-task", "document deliverable", "deliverable"]):
@@ -412,6 +424,57 @@ def markdown_to_pdf(
         clean_text = clean_markdown_for_reportlab(stripped)
         flowables.append(safe_paragraph(clean_text, body_style))
         i += 1
+
+    # Defensive recovery: If document had an unclosed code block (e.g. from splitting or prompt output)
+    if in_code_block and code_lines:
+        is_md_block = code_block_lang in ["markdown", "md", ""] or any(l.strip().startswith(("#", "##", "- ", "* ", "1.", "A)")) for l in code_lines[:8])
+        if is_md_block:
+            for cl in code_lines:
+                cl_stripped = cl.strip()
+                if not cl_stripped:
+                    flowables.append(Spacer(1, 4))
+                    continue
+                if cl_stripped in ["---", "***", "___"]:
+                    flowables.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#e2e8f0"), spaceAfter=8, spaceBefore=8))
+                    continue
+                h_match = re.match(r"^(#{1,6})\s+(.*)$", cl_stripped)
+                if h_match:
+                    level = len(h_match.group(1))
+                    h_content = clean_markdown_for_reportlab(h_match.group(2).strip())
+                    flowables.append(safe_paragraph(h_content, h1_style if level == 1 else (h2_style if level == 2 else h3_style)))
+                    continue
+                num_match = re.match(r"^([0-9]+[\.\)]|[A-Z][\.\)])\s+(.*)$", cl_stripped)
+                if num_match:
+                    item_html = f"<b>{num_match.group(1)}</b>&nbsp;&nbsp;{clean_markdown_for_reportlab(num_match.group(2))}"
+                    flowables.append(safe_paragraph(item_html, bullet_style))
+                    continue
+                if cl_stripped.startswith(("- ", "* ", "+ ")):
+                    bullet_html = f"&bull;&nbsp;&nbsp;{clean_markdown_for_reportlab(cl_stripped[2:])}"
+                    flowables.append(safe_paragraph(bullet_html, bullet_style))
+                    continue
+                flowables.append(safe_paragraph(clean_markdown_for_reportlab(cl_stripped), body_style))
+        else:
+            chunk_size = 15
+            rows = []
+            for k in range(0, len(code_lines), chunk_size):
+                chunk = code_lines[k:k+chunk_size]
+                chunk_text = "<br/>".join([
+                    l.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace(" ", "&nbsp;")
+                    for l in chunk
+                ])
+                rows.append([Paragraph(chunk_text, code_style)])
+            if rows:
+                t = Table(rows, colWidths=[504])
+                t.setStyle(TableStyle([
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
+                    ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
+                    ("TOPPADDING", (0, 0), (-1, -1), 3),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                ]))
+                flowables.append(t)
+                flowables.append(Spacer(1, 6))
 
     # Build the PDF using NumberedCanvas with recovery fallback
     try:

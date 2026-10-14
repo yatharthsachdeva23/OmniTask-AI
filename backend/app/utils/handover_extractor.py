@@ -149,9 +149,27 @@ def extract_and_sanitize_handover(
 
     return clean_text, handover
 
+def strip_outer_markdown_fences(text: str) -> str:
+    """
+    Safely strips artificial markdown code block wrappers (e.g. ```markdown ... ``` or dangling ```)
+    that wrap an entire document or were cut by splitting.
+    """
+    if not text:
+        return ""
+    lines = text.splitlines()
+    # Strip leading fence if it's markdown or blank
+    while lines and (re.match(r"^```(?:markdown|md|text|txt)?\s*$", lines[0].strip(), re.IGNORECASE) or not lines[0].strip()):
+        lines.pop(0)
+    # Strip trailing fence if it's ``` or blank
+    while lines and (re.match(r"^```\s*$", lines[-1].strip()) or not lines[-1].strip()):
+        lines.pop()
+    return "\n".join(lines).strip()
+
+
 def sanitize_display_output(text: str) -> str:
     """Helper to sanitize output and strip internal coordination tags for clean document compilation."""
     if not text:
         return ""
     clean, _ = extract_and_sanitize_handover(text)
-    return clean
+    return strip_outer_markdown_fences(clean)
+

@@ -10,10 +10,10 @@ from app.models.schemas import (
     StructuredSubTask,
 )
 from app.config import config
-from app.utils.handover_extractor import extract_and_sanitize_handover
+from app.utils.handover_extractor import extract_and_sanitize_handover, strip_outer_markdown_fences
 
 def clean_delimiter_markers(text: str) -> str:
-    """Strips internal document boundary lines like '=== DOCUMENT 1: ... ==='."""
+    """Strips internal document boundary lines like '=== DOCUMENT 1: ... ===' and unclosed outer code fences."""
     if not text:
         return ""
     lines = text.split("\n")
@@ -22,7 +22,7 @@ def clean_delimiter_markers(text: str) -> str:
         if re.match(r'^\s*={2,}\s*(?:DOCUMENT\s*\d+|SEPARATE\s+ANSWER\s+KEY|QUIZ\s+QUESTIONS|PART\s*\d+)\s*[:\-–—]?.*={2,}\s*$', l, re.IGNORECASE):
             continue
         cleaned.append(l)
-    return "\n".join(cleaned).strip()
+    return strip_outer_markdown_fences("\n".join(cleaned).strip())
 
 def split_quiz_and_answer_key(content: str) -> Tuple[Optional[str], Optional[str]]:
     """
@@ -33,14 +33,17 @@ def split_quiz_and_answer_key(content: str) -> Tuple[Optional[str], Optional[str
     if not content:
         return None, None
 
+    # Pre-clean outer wrappers
+    content = strip_outer_markdown_fences(content)
+
     # Pattern 1: === DOCUMENT 1 ... === and === DOCUMENT 2 ... === (or PART 1 / PART 2)
     m_doc2 = re.search(r'={2,}\s*(?:DOCUMENT\s*2|PART\s*2)\s*[:\-–—]?\s*(.*?)\s*={2,}', content, re.IGNORECASE)
     if m_doc2:
         split_idx = m_doc2.start()
         doc1_raw = content[:split_idx].strip()
         doc2_raw = content[split_idx:].strip()
-        doc1 = clean_delimiter_markers(doc1_raw)
-        doc2 = clean_delimiter_markers(doc2_raw)
+        doc1 = strip_outer_markdown_fences(clean_delimiter_markers(doc1_raw))
+        doc2 = strip_outer_markdown_fences(clean_delimiter_markers(doc2_raw))
         if len(doc1) > 50 and len(doc2) > 50:
             return doc1, doc2
 
@@ -50,8 +53,8 @@ def split_quiz_and_answer_key(content: str) -> Tuple[Optional[str], Optional[str
         split_idx = m_sep.start()
         doc1_raw = content[:split_idx].strip()
         doc2_raw = content[split_idx:].strip()
-        doc1 = clean_delimiter_markers(doc1_raw)
-        doc2 = clean_delimiter_markers(doc2_raw)
+        doc1 = strip_outer_markdown_fences(clean_delimiter_markers(doc1_raw))
+        doc2 = strip_outer_markdown_fences(clean_delimiter_markers(doc2_raw))
         if len(doc1) > 50 and len(doc2) > 50:
             return doc1, doc2
 
@@ -63,8 +66,8 @@ def split_quiz_and_answer_key(content: str) -> Tuple[Optional[str], Optional[str
     )
     if m_h_ans:
         split_idx = m_h_ans.start()
-        doc1 = clean_delimiter_markers(content[:split_idx].strip())
-        doc2 = clean_delimiter_markers(content[split_idx:].strip())
+        doc1 = strip_outer_markdown_fences(clean_delimiter_markers(content[:split_idx].strip()))
+        doc2 = strip_outer_markdown_fences(clean_delimiter_markers(content[split_idx:].strip()))
         if len(doc1) > 80 and len(doc2) > 80:
             return doc1, doc2
 
@@ -76,8 +79,8 @@ def split_quiz_and_answer_key(content: str) -> Tuple[Optional[str], Optional[str
     )
     if m_bold_ans:
         split_idx = m_bold_ans.start()
-        doc1 = clean_delimiter_markers(content[:split_idx].strip())
-        doc2 = clean_delimiter_markers(content[split_idx:].strip())
+        doc1 = strip_outer_markdown_fences(clean_delimiter_markers(content[:split_idx].strip()))
+        doc2 = strip_outer_markdown_fences(clean_delimiter_markers(content[split_idx:].strip()))
         if len(doc1) > 80 and len(doc2) > 80:
             return doc1, doc2
 
@@ -223,7 +226,7 @@ def sanitize_display_output(text: str) -> str:
     if not text:
         return ""
     clean, _ = extract_and_sanitize_handover(text)
-    return clean
+    return strip_outer_markdown_fences(clean)
 
 def format_blackboard_prior_knowledge(
     prior_outputs: Dict[str, Any],
@@ -1131,6 +1134,8 @@ if __name__ == "__main__":
         # CASE A: DUAL-FILE DELIVERABLE (QUIZ + SEPARATE ANSWER KEY)
         # ----------------------------------------------------
         if doc1_content and doc2_content:
+            doc1_content = strip_outer_markdown_fences(doc1_content)
+            doc2_content = strip_outer_markdown_fences(doc2_content)
             title_q, fn_q, title_ak, fn_ak = derive_clean_doc_titles(task.title, objective, compiled_content)
             uid = uuid.uuid4().hex[:6]
 

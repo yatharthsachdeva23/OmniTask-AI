@@ -59,6 +59,19 @@ def add_styled_paragraph(doc, text: str, style_name: str = 'Normal', space_after
                 run.bold = True
     return p
 
+
+def strip_outer_markdown_fences(text: str) -> str:
+    """Safely strips artificial markdown code block wrappers (e.g. ```markdown ... ``` or dangling ```)."""
+    if not text:
+        return ""
+    lines = text.splitlines()
+    while lines and (re.match(r"^```(?:markdown|md|text|txt)?\s*$", lines[0].strip(), re.IGNORECASE) or not lines[0].strip()):
+        lines.pop(0)
+    while lines and (re.match(r"^```\s*$", lines[-1].strip()) or not lines[-1].strip()):
+        lines.pop()
+    return "\n".join(lines).strip()
+
+
 def markdown_to_docx(
     markdown_content: str,
     title: str = "Document Deliverable",
@@ -90,7 +103,7 @@ def markdown_to_docx(
         ]):
             continue
         clean_lines_list.append(l)
-    markdown_content = '\n'.join(clean_lines_list)
+    markdown_content = strip_outer_markdown_fences('\n'.join(clean_lines_list))
 
     # Derive clean title if generic or pipeline title was provided
     if not title or any(b in title.lower() for b in ["omnitask", "compilation", "sub-task", "document deliverable", "deliverable"]):
@@ -322,6 +335,62 @@ def markdown_to_docx(
         # Standard Body Paragraph
         add_styled_paragraph(doc, stripped, space_after=4)
         i += 1
+
+    # Defensive recovery: If document had an unclosed code block (e.g. from splitting or prompt output)
+    if in_code_block and code_lines:
+        is_md_block = code_block_lang in ["markdown", "md", ""] or any(l.strip().startswith(("#", "##", "- ", "* ", "1.", "A)")) for l in code_lines[:8])
+        if is_md_block:
+            for cl in code_lines:
+                cl_stripped = cl.strip()
+                if not cl_stripped:
+                    continue
+                # Heading
+                h_match = re.match(r"^(#{1,6})\s+(.*)$", cl_stripped)
+                if h_match:
+                    h_level = len(h_match.group(1))
+                    h_text = h_match.group(2).strip()
+                    hp = doc.add_paragraph()
+                    hp.paragraph_format.space_before = Pt(12)
+                    hp.paragraph_format.space_after = Pt(4)
+                    hp.paragraph_format.keep_with_next = True
+                    hr = hp.add_run(h_text)
+                    hr.bold = True
+                    hr.font.name = 'Calibri'
+                    hr.font.size = Pt(15 if h_level == 1 else (13 if h_level == 2 else 11.5))
+                    hr.font.color.rgb = RGBColor(30, 58, 138) if h_level == 1 else RGBColor(51, 65, 85)
+                    continue
+                # Bullet
+                if cl_stripped.startswith(("- ", "* ", "+ ")):
+                    bp = doc.add_paragraph(style='List Bullet')
+                    bp.paragraph_format.space_after = Pt(3)
+                    add_styled_paragraph(doc, cl_stripped[2:])
+                    continue
+                # Numbered / lettered list
+                num_match = re.match(r"^([0-9]+[\.\)]|[A-Z][\.\)])\s+(.*)$", cl_stripped)
+                if num_match:
+                    np_para = doc.add_paragraph()
+                    np_para.paragraph_format.space_after = Pt(4)
+                    prefix_run = np_para.add_run(num_match.group(1) + " ")
+                    prefix_run.bold = True
+                    prefix_run.font.name = 'Calibri'
+                    prefix_run.font.size = Pt(10.5)
+                    add_styled_paragraph(doc, num_match.group(2))
+                    continue
+                # Normal paragraph
+                add_styled_paragraph(doc, cl_stripped, space_after=4)
+        else:
+            tbl = doc.add_table(rows=1, cols=1)
+            tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+            cell = tbl.cell(0, 0)
+            cell.width = Inches(6.5)
+            set_cell_background(cell, "F8FAFC")
+            set_cell_margins(cell, top=120, bottom=120, left=180, right=180)
+            cp = cell.paragraphs[0]
+            cp.paragraph_format.space_after = Pt(0)
+            c_run = cp.add_run("\n".join(code_lines))
+            c_run.font.name = 'Consolas'
+            c_run.font.size = Pt(9.0)
+            c_run.font.color.rgb = RGBColor(15, 23, 42)
 
     doc.save(str(file_path))
     docx_url = f"/api/generated-media/{file_path.name}"
