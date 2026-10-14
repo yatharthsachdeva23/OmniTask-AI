@@ -25,7 +25,8 @@ import {
   RefreshCw,
   User,
   Bot,
-  Brain
+  Brain,
+  Target
 } from 'lucide-react';
 import {
   IngestedFile,
@@ -36,12 +37,14 @@ import {
   DeliveryMode,
   ChatMessage,
   ChatSession,
-  SessionMemoryState
+  SessionMemoryState,
+  InteractivePlanResponse
 } from '../types';
 import { LiveExecutionVisualizer } from './LiveExecutionVisualizer';
 import { ChatSidebar } from './ChatSidebar';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { SessionMemoryModal } from './SessionMemoryModal';
+import { InteractivePlanCard } from './InteractivePlanCard';
 
 interface WorkerWorkspaceProps {
   prompt: string;
@@ -76,6 +79,13 @@ export const WorkerWorkspace: React.FC<WorkerWorkspaceProps> = ({
 
   // Execution & Swarm States
   const [currentDeliveryMode, setCurrentDeliveryMode] = useState<DeliveryMode>(deliveryMode);
+  const [currentAskBeforeDoing, setCurrentAskBeforeDoing] = useState<boolean>(askBeforeDoing);
+  const [isPlanning, setIsPlanning] = useState<boolean>(false);
+  const [interactivePlan, setInteractivePlan] = useState<InteractivePlanResponse | null>(null);
+  const [userAnswers, setUserAnswers] = useState<Record<string, string>>({});
+  const [customNotes, setCustomNotes] = useState<string>('');
+  const [pendingPrompt, setPendingPrompt] = useState<string>('');
+  const [pendingFiles, setPendingFiles] = useState<IngestedFile[]>([]);
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
   const [currentStage, setCurrentStage] = useState<string>('READY');
   const [stageMessage, setStageMessage] = useState<string>('Ready to orchestrate multi-agent workflow');
@@ -196,6 +206,10 @@ export const WorkerWorkspace: React.FC<WorkerWorkspaceProps> = ({
     setActiveSubtask(null);
     setFinalEvaluation(null);
     setSessionMemory(null);
+    setInteractivePlan(null);
+    setPendingPrompt('');
+    setPendingFiles([]);
+    setIsPlanning(false);
     setCurrentStage('READY');
     setStageMessage('Ready to start a new autonomous task...');
     setIsExecuting(false);
@@ -245,7 +259,7 @@ export const WorkerWorkspace: React.FC<WorkerWorkspaceProps> = ({
           mode: 'paid',
           delivery_mode: currentDeliveryMode,
           allow_simulation: true,
-          ask_before_doing: askBeforeDoing,
+          ask_before_doing: currentAskBeforeDoing,
           user_clarifications: userClarifications,
           approved_plan_summary: planSummary,
           chat_id: assignedChatId
@@ -419,13 +433,78 @@ export const WorkerWorkspace: React.FC<WorkerWorkspaceProps> = ({
 
   // Handle follow-up submission
   const handleSendMessage = () => {
-    if (!inputText.trim() || isExecuting) return;
+    if (!inputText.trim() || isExecuting || isPlanning) return;
     const currentInput = inputText.trim();
     const currentFiles = [...attachedFiles];
 
+    if (currentAskBeforeDoing) {
+      handleFormulatePlan(currentInput, currentFiles);
+    } else {
+      setInputText('');
+      setAttachedFiles([]);
+      runExecutionTurn(currentInput, currentFiles, undefined, undefined, currentChatId);
+    }
+  };
+
+  // Step 1: Formulate Implementation Plan & Clarifying Questions (Ask Before Doing)
+  const handleFormulatePlan = async (taskPrompt: string, filesList: IngestedFile[]) => {
+    setIsPlanning(true);
+    setPendingPrompt(taskPrompt);
+    setPendingFiles(filesList);
+    try {
+      const res = await fetch('/api/interactive-plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: taskPrompt,
+          files: filesList
+        })
+      });
+      if (!res.ok) throw new Error('Failed to generate interactive plan');
+      const planData: InteractivePlanResponse = await res.json();
+      setInteractivePlan(planData);
+
+      // Pre-select defaults
+      const initialAnswers: Record<string, string> = {};
+      if (planData.clarifying_questions) {
+        planData.clarifying_questions.forEach(q => {
+          initialAnswers[q.id] = q.default_selected || (q.options[0] || '');
+        });
+      }
+      setUserAnswers(initialAnswers);
+      scrollToBottom();
+    } catch (err) {
+      console.error('Plan formulation error:', err);
+      // Fallback: execute directly if formulation fails
+      setInputText('');
+      setAttachedFiles([]);
+      runExecutionTurn(taskPrompt, filesList, undefined, undefined, currentChatId);
+    } finally {
+      setIsPlanning(false);
+    }
+  };
+
+  // Step 2: Approve & Execute with user answers incorporated
+  const handleExecuteWithApprovedPlan = () => {
+    if (!interactivePlan) return;
+
+    const finalClarifications = { ...userAnswers };
+    if (customNotes.trim()) {
+      finalClarifications["Additional Custom Directives"] = customNotes.trim();
+    }
+
+    const planSummary = `Objective: ${interactivePlan.objective_summary}. Approach: ${interactivePlan.architectural_approach}. Steps: ${interactivePlan.steps.map(s => s.title).join(' -> ')}`;
+
+    const p = pendingPrompt || inputText;
+    const f = pendingFiles.length > 0 ? pendingFiles : attachedFiles;
+
+    setInteractivePlan(null);
     setInputText('');
     setAttachedFiles([]);
-    runExecutionTurn(currentInput, currentFiles, undefined, undefined, currentChatId);
+    setPendingPrompt('');
+    setPendingFiles([]);
+
+    runExecutionTurn(p, f, finalClarifications, planSummary, currentChatId);
   };
 
   // Handle File Upload for chat follow-up
@@ -484,6 +563,13 @@ export const WorkerWorkspace: React.FC<WorkerWorkspaceProps> = ({
         isOpen={isSidebarOpen}
         onToggle={() => setIsSidebarOpen(!isSidebarOpen)}
         refreshTrigger={refreshSidebarTrigger}
+        deliveryMode={currentDeliveryMode}
+        onDeliveryModeChange={(m) => setCurrentDeliveryMode(m)}
+        askBeforeDoing={currentAskBeforeDoing}
+        onAskBeforeDoingChange={(v) => {
+          setCurrentAskBeforeDoing(v);
+          if (!v) setInteractivePlan(null);
+        }}
       />
 
       {/* MAIN CHAT WORKSPACE CANVAS */}
@@ -511,18 +597,81 @@ export const WorkerWorkspace: React.FC<WorkerWorkspaceProps> = ({
 
             <div className="h-5 w-px bg-white/[0.1]"></div>
 
-            {/* Session Title & Mode */}
-            <div className="flex items-center gap-2 max-w-md sm:max-w-xl truncate">
+            {/* Session Title & Interactive Swarm Controls */}
+            <div className="flex items-center gap-3 max-w-sm sm:max-w-md md:max-w-xl truncate">
               <span className="text-sm font-medium text-white truncate">
                 {chatTitle}
               </span>
-              <span className={`text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded border shrink-0 ${
-                currentDeliveryMode === 'smart' || currentDeliveryMode === 'overdeliver'
-                  ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
-                  : 'bg-white/10 text-white border-white/20'
-              }`}>
-                {currentDeliveryMode === 'smart' || currentDeliveryMode === 'overdeliver' ? '✨ Smart' : '🎯 Strict'}
-              </span>
+
+              {/* Mode Segmented Controls */}
+              <div className="hidden sm:inline-flex items-center p-0.5 rounded-lg bg-white/[0.04] border border-white/[0.08] gap-0.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setCurrentDeliveryMode('smart')}
+                  disabled={isExecuting || isPlanning}
+                  className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium transition-all ${
+                    currentDeliveryMode === 'smart' || currentDeliveryMode === 'overdeliver'
+                      ? 'bg-gradient-to-r from-emerald-500/25 to-teal-500/15 text-emerald-300 border border-emerald-500/30 shadow-sm font-semibold'
+                      : 'text-neutral-400 hover:text-white'
+                  }`}
+                  title="Smart Mode: Overdelivers with companion assets, PDFs, and deep multi-agent reasoning"
+                >
+                  <Sparkles className="w-3 h-3 text-emerald-400" />
+                  <span>Smart</span>
+                  <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300">Rec</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCurrentDeliveryMode('strict')}
+                  disabled={isExecuting || isPlanning}
+                  className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium transition-all ${
+                    currentDeliveryMode === 'strict'
+                      ? 'bg-white/10 text-white border border-white/20 shadow-sm font-semibold'
+                      : 'text-neutral-400 hover:text-white'
+                  }`}
+                  title="Strict Mode: Executes strictly to prompt constraints without expanding scope"
+                >
+                  <Target className="w-3 h-3 text-neutral-300" />
+                  <span>Strict</span>
+                </button>
+              </div>
+
+              {/* Ask Before Doing Toggle */}
+              <button
+                type="button"
+                onClick={() => {
+                  const nextState = !currentAskBeforeDoing;
+                  setCurrentAskBeforeDoing(nextState);
+                  if (!nextState) setInteractivePlan(null);
+                }}
+                disabled={isExecuting || isPlanning}
+                className={`hidden md:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg border text-[11px] font-medium transition-all select-none shrink-0 ${
+                  currentAskBeforeDoing
+                    ? 'bg-emerald-500/10 border-emerald-500/35 text-emerald-300'
+                    : 'bg-white/[0.02] border-white/[0.08] text-neutral-400 hover:text-neutral-200'
+                }`}
+                title={
+                  currentAskBeforeDoing
+                    ? "Ask Before Doing (Active): Asks clarifying questions and formulates implementation plan before running swarm."
+                    : "Ask Before Doing (Disabled): Directly executes full autonomous pipeline in one shot without asking."
+                }
+              >
+                <div
+                  className={`w-5 h-3 rounded-full p-0.5 transition-colors flex items-center ${
+                    currentAskBeforeDoing ? 'bg-emerald-500 justify-end' : 'bg-neutral-700 justify-start'
+                  }`}
+                >
+                  <div className="w-2 h-2 rounded-full bg-black shadow-sm"></div>
+                </div>
+                <span>Ask First</span>
+                <span
+                  className={`text-[9px] px-1 py-0.2 rounded font-mono uppercase font-semibold ${
+                    currentAskBeforeDoing ? 'bg-emerald-500/20 text-emerald-300' : 'bg-white/[0.06] text-neutral-400'
+                  }`}
+                >
+                  {currentAskBeforeDoing ? 'ON' : 'OFF'}
+                </span>
+              </button>
             </div>
           </div>
 
@@ -576,7 +725,7 @@ export const WorkerWorkspace: React.FC<WorkerWorkspaceProps> = ({
               <div className="w-7 h-7 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin"></div>
               <p className="text-xs font-mono text-neutral-400">Loading conversation context & deliverables...</p>
             </div>
-          ) : messages.length === 0 && !isExecuting ? (
+          ) : messages.length === 0 && !isExecuting && !interactivePlan ? (
             /* Empty Chat State */
             <div className="max-w-3xl mx-auto py-12 text-center space-y-6">
               <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center mx-auto shadow-xl">
@@ -846,6 +995,28 @@ export const WorkerWorkspace: React.FC<WorkerWorkspaceProps> = ({
                 </div>
               )}
 
+              {/* INTERACTIVE PLAN CARD (When Ask Before Doing is active and plan generated) */}
+              {interactivePlan && !isExecuting && (
+                <div className="animate-fadeIn">
+                  <InteractivePlanCard
+                    plan={interactivePlan}
+                    userAnswers={userAnswers}
+                    onAnswerChange={(qId, ans) => setUserAnswers(prev => ({ ...prev, [qId]: ans }))}
+                    customNotes={customNotes}
+                    onCustomNotesChange={setCustomNotes}
+                    onApproveAndExecute={handleExecuteWithApprovedPlan}
+                    onCancelOrRevise={() => {
+                      setInputText(pendingPrompt);
+                      setAttachedFiles(pendingFiles);
+                      setInteractivePlan(null);
+                      setPendingPrompt('');
+                      setPendingFiles([]);
+                    }}
+                    isExecuting={isExecuting}
+                  />
+                </div>
+              )}
+
               <div ref={feedEndRef} className="h-4"></div>
             </div>
           )}
@@ -898,7 +1069,7 @@ export const WorkerWorkspace: React.FC<WorkerWorkspaceProps> = ({
               />
 
               <div className="flex items-center justify-between pt-1 border-t border-white/[0.04]">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <input
                     type="file"
                     ref={fileInputRef}
@@ -908,7 +1079,7 @@ export const WorkerWorkspace: React.FC<WorkerWorkspaceProps> = ({
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    disabled={isExecuting || isUploading}
+                    disabled={isExecuting || isUploading || isPlanning}
                     className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] text-xs font-mono text-neutral-400 hover:text-white border border-white/[0.06] transition-all disabled:opacity-50"
                     title="Attach reference files"
                   >
@@ -916,7 +1087,75 @@ export const WorkerWorkspace: React.FC<WorkerWorkspaceProps> = ({
                     <span>{isUploading ? 'Uploading...' : 'Attach File'}</span>
                   </button>
 
-                  <span className="text-[11px] font-mono text-neutral-600 hidden sm:inline">
+                  {/* Ask Before Doing Toggle */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextState = !currentAskBeforeDoing;
+                      setCurrentAskBeforeDoing(nextState);
+                      if (!nextState) setInteractivePlan(null);
+                    }}
+                    disabled={isExecuting || isPlanning}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-all select-none ${
+                      currentAskBeforeDoing
+                        ? 'bg-emerald-500/10 border-emerald-500/35 text-emerald-300 hover:bg-emerald-500/15'
+                        : 'bg-white/[0.02] border-white/[0.08] text-neutral-400 hover:text-neutral-200 hover:bg-white/[0.05]'
+                    }`}
+                    title={
+                      currentAskBeforeDoing
+                        ? "Ask Before Doing (Active): Analyzes objective, outlines implementation plan, and asks clarifying questions before execution."
+                        : "Ask Before Doing (Disabled): Directly executes full autonomous pipeline in one shot without asking."
+                    }
+                  >
+                    <div
+                      className={`w-6 h-3.5 rounded-full p-0.5 transition-colors flex items-center ${
+                        currentAskBeforeDoing ? 'bg-emerald-500 justify-end' : 'bg-neutral-700 justify-start'
+                      }`}
+                    >
+                      <div className="w-2.5 h-2.5 rounded-full bg-black shadow-sm"></div>
+                    </div>
+                    <span className="hidden sm:inline">Ask Before Doing</span>
+                    <span
+                      className={`text-[9px] px-1 py-0.2 rounded font-mono uppercase font-semibold ${
+                        currentAskBeforeDoing ? 'bg-emerald-500/20 text-emerald-300' : 'bg-white/[0.06] text-neutral-400'
+                      }`}
+                    >
+                      {currentAskBeforeDoing ? 'ON' : 'OFF'}
+                    </span>
+                  </button>
+
+                  {/* Mode Segmented Controls */}
+                  <div className="hidden sm:inline-flex items-center p-0.5 rounded-lg bg-white/[0.04] border border-white/[0.08] gap-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setCurrentDeliveryMode('smart')}
+                      disabled={isExecuting || isPlanning}
+                      className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium transition-all ${
+                        currentDeliveryMode === 'smart' || currentDeliveryMode === 'overdeliver'
+                          ? 'bg-gradient-to-r from-emerald-500/20 to-teal-500/10 text-emerald-300 border border-emerald-500/30 shadow-sm'
+                          : 'text-neutral-400 hover:text-white'
+                      }`}
+                    >
+                      <Sparkles className="w-3 h-3 text-emerald-400" />
+                      <span>Smart</span>
+                      <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300">Rec</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCurrentDeliveryMode('strict')}
+                      disabled={isExecuting || isPlanning}
+                      className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium transition-all ${
+                        currentDeliveryMode === 'strict'
+                          ? 'bg-white/10 text-white border border-white/20 shadow-sm'
+                          : 'text-neutral-400 hover:text-white'
+                      }`}
+                    >
+                      <Target className="w-3 h-3 text-neutral-400" />
+                      <span>Strict</span>
+                    </button>
+                  </div>
+
+                  <span className="text-[11px] font-mono text-neutral-600 hidden xl:inline">
                     Enter to send &bull; Shift+Enter for new line
                   </span>
                 </div>
@@ -924,13 +1163,27 @@ export const WorkerWorkspace: React.FC<WorkerWorkspaceProps> = ({
                 <div className="flex items-center gap-2">
                   <button
                     onClick={handleSendMessage}
-                    disabled={!inputText.trim() || isExecuting}
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:bg-neutral-800 disabled:text-neutral-500 text-white text-xs font-medium shadow-lg shadow-indigo-500/20 disabled:shadow-none transition-all cursor-pointer disabled:cursor-not-allowed"
+                    disabled={!inputText.trim() || isExecuting || isPlanning}
+                    className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-medium shadow-lg transition-all cursor-pointer disabled:cursor-not-allowed ${
+                      currentAskBeforeDoing && !interactivePlan
+                        ? 'bg-emerald-500 hover:bg-emerald-400 text-black shadow-emerald-500/20 disabled:bg-neutral-800 disabled:text-neutral-500'
+                        : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-500/20 disabled:bg-neutral-800 disabled:text-neutral-500'
+                    }`}
                   >
-                    {isExecuting ? (
+                    {isPlanning ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Formulating Plan...</span>
+                      </>
+                    ) : isExecuting ? (
                       <>
                         <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                         <span>Executing...</span>
+                      </>
+                    ) : currentAskBeforeDoing && !interactivePlan ? (
+                      <>
+                        <Sparkles className="w-3.5 h-3.5 fill-black" />
+                        <span>Plan &amp; Ask</span>
                       </>
                     ) : (
                       <>

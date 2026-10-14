@@ -14,9 +14,10 @@ import {
   Layers,
   FolderOpen,
   Brain,
-  RotateCw
+  RotateCw,
+  Target
 } from 'lucide-react';
-import { ChatSessionMeta } from '../types';
+import { ChatSessionMeta, DeliveryMode } from '../types';
 
 interface ChatSidebarProps {
   currentChatId: string | null;
@@ -25,6 +26,10 @@ interface ChatSidebarProps {
   isOpen: boolean;
   onToggle: () => void;
   refreshTrigger?: number;
+  deliveryMode?: DeliveryMode;
+  onDeliveryModeChange?: (mode: DeliveryMode) => void;
+  askBeforeDoing?: boolean;
+  onAskBeforeDoingChange?: (val: boolean) => void;
 }
 
 export const ChatSidebar: React.FC<ChatSidebarProps> = ({
@@ -33,7 +38,11 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
   onNewChat,
   isOpen,
   onToggle,
-  refreshTrigger = 0
+  refreshTrigger = 0,
+  deliveryMode = 'smart',
+  onDeliveryModeChange,
+  askBeforeDoing = true,
+  onAskBeforeDoingChange
 }) => {
   const [chats, setChats] = useState<ChatSessionMeta[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -269,7 +278,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
         </div>
 
         {/* New Chat Action Button */}
-        <div className="p-3 border-b border-white/[0.04] shrink-0">
+        <div className="p-3 border-b border-white/[0.04] shrink-0 space-y-2.5">
           <button
             onClick={onNewChat}
             className={`w-full flex items-center gap-2 rounded-xl transition-all font-mono text-xs font-medium shadow-md ${
@@ -282,6 +291,107 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
             <Plus className="w-4 h-4 shrink-0" />
             {isOpen && <span>New Chat</span>}
           </button>
+
+          {/* Swarm Mode & Ask Before Doing Controls */}
+          {isOpen ? (
+            <div className="space-y-2 pt-1 border-t border-white/[0.04]">
+              <div className="flex items-center justify-between text-[10px] font-mono uppercase tracking-wider text-neutral-400">
+                <span>Execution Mode</span>
+                <span className="text-emerald-400 font-semibold">Swarm Analysis</span>
+              </div>
+
+              {/* Delivery Mode Toggle (Smart vs Strict) */}
+              <div className="grid grid-cols-2 gap-1 p-0.5 rounded-lg bg-black/50 border border-white/[0.08]">
+                <button
+                  type="button"
+                  onClick={() => onDeliveryModeChange?.('smart')}
+                  className={`flex items-center justify-center gap-1.5 py-1.5 rounded-md text-[11px] font-medium transition-all ${
+                    deliveryMode === 'smart' || deliveryMode === 'overdeliver'
+                      ? 'bg-gradient-to-r from-emerald-500/25 to-teal-500/15 text-emerald-300 border border-emerald-500/30 shadow-sm font-semibold'
+                      : 'text-neutral-400 hover:text-white'
+                  }`}
+                  title="Smart Mode: Overdelivers with companion assets, PDFs, and deep multi-agent reasoning"
+                >
+                  <Sparkles className="w-3 h-3 text-emerald-400" />
+                  <span>Smart</span>
+                  <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300">Rec</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDeliveryModeChange?.('strict')}
+                  className={`flex items-center justify-center gap-1.5 py-1.5 rounded-md text-[11px] font-medium transition-all ${
+                    deliveryMode === 'strict'
+                      ? 'bg-white/10 text-white border border-white/20 shadow-sm font-semibold'
+                      : 'text-neutral-400 hover:text-white'
+                  }`}
+                  title="Strict Mode: Executes strictly to prompt constraints without expanding scope"
+                >
+                  <Target className="w-3 h-3 text-neutral-300" />
+                  <span>Strict</span>
+                </button>
+              </div>
+
+              {/* Ask Before Doing Toggle */}
+              <button
+                type="button"
+                onClick={() => onAskBeforeDoingChange?.(!askBeforeDoing)}
+                className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg border text-[11px] font-medium transition-all select-none ${
+                  askBeforeDoing
+                    ? 'bg-emerald-500/10 border-emerald-500/35 text-emerald-300 hover:bg-emerald-500/15'
+                    : 'bg-black/40 border-white/[0.06] text-neutral-400 hover:text-neutral-300 hover:bg-white/[0.03]'
+                }`}
+                title={
+                  askBeforeDoing
+                    ? "Ask Before Doing (Active): Asks clarifying questions and formulates implementation plan before running swarm."
+                    : "Ask Before Doing (Disabled): Directly executes full autonomous pipeline in one shot without asking."
+                }
+              >
+                <div className="flex items-center gap-2">
+                  <div
+                    className={`w-5 h-3 rounded-full p-0.5 transition-colors flex items-center ${
+                      askBeforeDoing ? 'bg-emerald-500 justify-end' : 'bg-neutral-700 justify-start'
+                    }`}
+                  >
+                    <div className="w-2 h-2 rounded-full bg-black shadow-sm"></div>
+                  </div>
+                  <span>Ask Before Doing</span>
+                </div>
+                <span
+                  className={`text-[9px] px-1.5 py-0.2 rounded font-mono uppercase font-semibold ${
+                    askBeforeDoing ? 'bg-emerald-500/20 text-emerald-300' : 'bg-white/[0.06] text-neutral-500'
+                  }`}
+                >
+                  {askBeforeDoing ? 'ON' : 'OFF'}
+                </span>
+              </button>
+            </div>
+          ) : (
+            /* Collapsed rail mode indicator */
+            <div className="flex flex-col items-center gap-1.5 pt-1">
+              <button
+                onClick={() => onDeliveryModeChange?.(deliveryMode === 'smart' ? 'strict' : 'smart')}
+                className={`w-7 h-7 rounded-lg flex items-center justify-center border transition ${
+                  deliveryMode === 'smart'
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                    : 'bg-white/[0.04] border-white/[0.1] text-white'
+                }`}
+                title={`Execution Mode: ${deliveryMode === 'smart' ? 'Smart (Click for Strict)' : 'Strict (Click for Smart)'}`}
+              >
+                {deliveryMode === 'smart' ? <Sparkles className="w-3.5 h-3.5 text-emerald-400" /> : <Target className="w-3.5 h-3.5 text-neutral-300" />}
+              </button>
+              <button
+                onClick={() => onAskBeforeDoingChange?.(!askBeforeDoing)}
+                className={`w-7 h-7 rounded-lg flex items-center justify-center border transition ${
+                  askBeforeDoing
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                    : 'bg-black/40 border-white/[0.06] text-neutral-500'
+                }`}
+                title={`Ask Before Doing: ${askBeforeDoing ? 'ON (Click to disable)' : 'OFF (Click to enable)'}`}
+              >
+                <div className={`w-2 h-2 rounded-full ${askBeforeDoing ? 'bg-emerald-400 animate-pulse' : 'bg-neutral-600'}`} />
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Search Bar (only when open) */}
