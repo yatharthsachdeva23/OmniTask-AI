@@ -162,12 +162,21 @@ class OmniOrchestrator:
         # Context Preservation & Chat Storage RAG across multi-turn chat sessions
         context_rag = ChatContextRAG(chat_session)
         context_package = context_rag.build_context_package(request.prompt)
+        session_memory_snapshot = context_package.get("session_memory_snapshot")
+
         if context_package.get("has_prior_context"):
             effective_prompt = f"{context_package['formatted_context_block']}[USER CURRENT DIRECTIVE / MODIFICATION REQUEST]:\n{effective_prompt}"
 
         # Prepend dedicated Persistent Memory as the foundational first block
         if user_memory_block:
             effective_prompt = f"{user_memory_block}\n\n{effective_prompt}"
+
+        # Real-time multi-turn session memory update for frontend transparency
+        if session_memory_snapshot:
+            yield self._format_sse("SESSION_MEMORY_UPDATED", {
+                "chat_id": chat_id,
+                "session_memory": session_memory_snapshot
+            })
 
         # --- STEP 1: PARSING & STRUCTURING ---
         yield self._format_sse("STAGE_CHANGE", {
@@ -562,7 +571,8 @@ class OmniOrchestrator:
             "stage": "COMPLETED",
             "structured_goal": blackboard.structured_goal.model_dump() if blackboard.structured_goal else None,
             "final_evaluation": evaluation.model_dump(),
-            "blackboard_state": blackboard.get_state().model_dump()
+            "blackboard_state": blackboard.get_state().model_dump(),
+            "session_memory": session_memory_snapshot
         }
 
         asst_msg = chat_manager.add_assistant_message(
@@ -570,24 +580,13 @@ class OmniOrchestrator:
             content=full_content,
             execution_data=execution_data,
             blackboard_state=blackboard.get_state().model_dump(),
-            latest_evaluation=evaluation.model_dump()
+            latest_evaluation=evaluation.model_dump(),
+            latest_session_memory=session_memory_snapshot
         )
 
-        # Incrementally update Persistent Memory if user disclosed persistent business/identity/rules
-        try:
-            updated_mem = persistent_memory.inspect_and_update_from_message(
-                user_id=user_id,
-                user_prompt=request.prompt,
-                assistant_response=full_content,
-                chat_id=chat_id
-            )
-            if updated_mem:
-                yield self._format_sse("USER_GLOBAL_MEMORY_UPDATED", {
-                    "user_id": user_id,
-                    "message": "Persistent Memory self-updated: new durable facts preserved for future chats."
-                })
-        except Exception as mem_up_err:
-            print(f"[Orchestrator] Incremental memory update notice: {mem_up_err}")
+        # NOTE: Persistent Memory is NOT updated after every individual message.
+        # It consolidates strictly once when starting a new chat session to prevent
+        # small task-specific details from polluting the user's global profile.
 
         yield self._format_sse("CHAT_MESSAGE_COMPLETED", {
             "chat_id": chat_id,
@@ -598,7 +597,8 @@ class OmniOrchestrator:
             "session_id": session_id,
             "chat_id": chat_id,
             "final_evaluation": evaluation.model_dump(),
-            "full_blackboard_state": blackboard.get_state().model_dump()
+            "full_blackboard_state": blackboard.get_state().model_dump(),
+            "session_memory": session_memory_snapshot
         })
 
     def _format_sse(self, event_name: str, data: Dict[str, Any]) -> str:

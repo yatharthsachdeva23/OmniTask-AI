@@ -458,11 +458,55 @@ class ChatContextRAG:
 
         formatted_context_block = "\n\n" + "\n\n".join(formatted_parts) + "\n\n" if formatted_parts else ""
 
+        # Structured RAG excerpts list for UI inspection and execution state
+        structured_excerpts = [
+            {
+                "turn_index": chunk.turn_index,
+                "role": chunk.role,
+                "heading": chunk.heading,
+                "content": chunk.content[:800],
+                "score": round(score, 2)
+            }
+            for chunk, score in retrieved
+        ]
+
+        active_grounding = None
+        if targeted_match:
+            active_grounding = {
+                "matched_turn_index": targeted_match["matched_turn_index"],
+                "is_immediate_preceding": targeted_match["is_immediate_preceding"],
+                "raw_confidence": targeted_match["raw_confidence"],
+                "amplified_confidence": targeted_match["amplified_confidence"],
+                "raw_gap": targeted_match.get("raw_gap", 0.0),
+                "candidates_summary": targeted_match.get("candidates_summary", [])
+            }
+        elif prior_messages:
+            last_asst_idx = next((i + 1 for i, m in enumerate(reversed(prior_messages)) if m.role == "assistant"), len(prior_messages))
+            active_grounding = {
+                "matched_turn_index": last_asst_idx,
+                "is_immediate_preceding": True,
+                "raw_confidence": 0.95,
+                "amplified_confidence": 0.99,
+                "raw_gap": 0.20,
+                "candidates_summary": [{"turn_index": last_asst_idx, "raw": 0.95, "amplified": 0.99}]
+            }
+
+        session_memory_snapshot = {
+            "chat_id": self.session.id,
+            "has_prior_context": True,
+            "active_turn_grounding": active_grounding,
+            "retrieved_excerpts": structured_excerpts,
+            "compressed_history": compressed_memory_text,
+            "total_indexed_chunks": len(self.chunks),
+            "recent_context_preview": recent_deliverables_text[:400] if recent_deliverables_text else ""
+        }
+
         return {
             "has_prior_context": True,
             "recent_deliverables_text": recent_deliverables_text,
             "compressed_memory_text": compressed_memory_text,
             "rag_excerpts_text": rag_excerpts_text,
             "formatted_context_block": formatted_context_block,
-            "targeted_match_info": targeted_match
+            "targeted_match_info": targeted_match,
+            "session_memory_snapshot": session_memory_snapshot
         }

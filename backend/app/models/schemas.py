@@ -199,6 +199,7 @@ class ChatSession(BaseModel):
     messages: List[ChatMessage] = Field(default_factory=list)
     blackboard_state: Optional[Dict[str, Any]] = None
     latest_evaluation: Optional[Dict[str, Any]] = None
+    latest_session_memory: Optional[Dict[str, Any]] = None
     delivery_mode: str = "smart"
     user_id: Optional[str] = "default_user"
 

@@ -194,7 +194,8 @@ class ChatManager:
         content: str,
         execution_data: Optional[Dict[str, Any]] = None,
         blackboard_state: Optional[Dict[str, Any]] = None,
-        latest_evaluation: Optional[Dict[str, Any]] = None
+        latest_evaluation: Optional[Dict[str, Any]] = None,
+        latest_session_memory: Optional[Dict[str, Any]] = None
     ) -> ChatMessage:
         """Appends an assistant turn to an existing chat session."""
         session = self.get_chat(chat_id)
@@ -217,6 +218,8 @@ class ChatManager:
             session.blackboard_state = blackboard_state
         if latest_evaluation:
             session.latest_evaluation = latest_evaluation
+        if latest_session_memory:
+            session.latest_session_memory = latest_session_memory
 
         self.save_chat(session)
         return asst_msg

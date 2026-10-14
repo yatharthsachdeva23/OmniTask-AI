@@ -604,7 +604,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
               <div className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.06] flex items-start gap-2.5 text-neutral-400">
                 <Sparkles className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
                 <p className="leading-relaxed">
-                  The moment you start a new chat, the persistent memory system automatically extracts durable facts (like business ownership, roles, and rules) from prior chats and grounds every new session without needing re-explanation. Ephemeral image or task prompts are strictly filtered out.
+                  The moment you start a new conversation, the persistent memory system consolidates durable user identity facts and lifelong operational rules from previous conversations. Task-specific parameters (syllabus units, assignment questions, and file formats) are strictly filtered out and isolated inside Multi-Turn Session Memory.
                 </p>
               </div>
 

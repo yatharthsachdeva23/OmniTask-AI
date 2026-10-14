@@ -24,7 +24,8 @@ import {
   ChevronUp,
   RefreshCw,
   User,
-  Bot
+  Bot,
+  Brain
 } from 'lucide-react';
 import {
   IngestedFile,
@@ -34,11 +35,13 @@ import {
   FinalEvaluationResult,
   DeliveryMode,
   ChatMessage,
-  ChatSession
+  ChatSession,
+  SessionMemoryState
 } from '../types';
 import { LiveExecutionVisualizer } from './LiveExecutionVisualizer';
 import { ChatSidebar } from './ChatSidebar';
 import { MarkdownRenderer } from './MarkdownRenderer';
+import { SessionMemoryModal } from './SessionMemoryModal';
 
 interface WorkerWorkspaceProps {
   prompt: string;
@@ -80,6 +83,10 @@ export const WorkerWorkspace: React.FC<WorkerWorkspaceProps> = ({
   const [blackboard, setBlackboard] = useState<BlackboardSnapshot | null>(null);
   const [activeSubtask, setActiveSubtask] = useState<StructuredSubTask | null>(null);
   const [finalEvaluation, setFinalEvaluation] = useState<FinalEvaluationResult | null>(null);
+
+  // Multi-Turn Session Memory & Context RAG State
+  const [sessionMemory, setSessionMemory] = useState<SessionMemoryState | null>(null);
+  const [isSessionMemoryModalOpen, setIsSessionMemoryModalOpen] = useState<boolean>(false);
 
   // Input & Interactive Chat States
   const [inputText, setInputText] = useState<string>('');
@@ -158,6 +165,18 @@ export const WorkerWorkspace: React.FC<WorkerWorkspaceProps> = ({
           setBlackboard(null);
           setFinalEvaluation(null);
         }
+        // Restore Multi-Turn Session Memory
+        if (data.latest_session_memory) {
+          setSessionMemory(data.latest_session_memory);
+        } else if (lastAsst?.execution_data?.session_memory) {
+          setSessionMemory(lastAsst.execution_data.session_memory);
+        } else {
+          fetch(`/api/chats/${chatId}/session-memory`)
+            .then(r => r.ok ? r.json() : null)
+            .then(sm => { if (sm) setSessionMemory(sm); })
+            .catch(() => {});
+        }
+
         setIsExecuting(false);
       }
     } catch (err) {
@@ -176,6 +195,7 @@ export const WorkerWorkspace: React.FC<WorkerWorkspaceProps> = ({
     setBlackboard(null);
     setActiveSubtask(null);
     setFinalEvaluation(null);
+    setSessionMemory(null);
     setCurrentStage('READY');
     setStageMessage('Ready to start a new autonomous task...');
     setIsExecuting(false);
@@ -309,10 +329,17 @@ export const WorkerWorkspace: React.FC<WorkerWorkspaceProps> = ({
                 if (data.updated_plan) {
                   setStructuredGoal(data.updated_plan);
                 }
+              } else if (eventName === 'SESSION_MEMORY_UPDATED') {
+                if (data.session_memory) {
+                  setSessionMemory(data.session_memory);
+                }
               } else if (eventName === 'CHAT_MESSAGE_COMPLETED') {
                 executionFinished = true;
                 // Add or update assistant message in state
                 const asstMsg: ChatMessage = data.message;
+                if (asstMsg.execution_data?.session_memory) {
+                  setSessionMemory(asstMsg.execution_data.session_memory);
+                }
                 setMessages(prev => {
                   const filtered = prev.filter(m => m.id !== asstMsg.id);
                   return [...filtered, asstMsg];
@@ -327,6 +354,9 @@ export const WorkerWorkspace: React.FC<WorkerWorkspaceProps> = ({
                 }
                 if (data.full_blackboard_state) {
                   setBlackboard(data.full_blackboard_state);
+                }
+                if (data.session_memory) {
+                  setSessionMemory(data.session_memory);
                 }
                 setActiveSubtask(null);
                 setRefreshSidebarTrigger(prev => prev + 1);
@@ -354,6 +384,11 @@ export const WorkerWorkspace: React.FC<WorkerWorkspaceProps> = ({
                 setFinalEvaluation(lastAsst.execution_data.final_evaluation || chatData.latest_evaluation || null);
                 setCurrentStage(lastAsst.execution_data.stage || 'COMPLETED');
                 setStageMessage(`Task execution finalized • Score: ${lastAsst.execution_data.final_evaluation?.overall_completion_score || 95}%`);
+                if (lastAsst.execution_data.session_memory) {
+                  setSessionMemory(lastAsst.execution_data.session_memory);
+                } else if (chatData.latest_session_memory) {
+                  setSessionMemory(chatData.latest_session_memory);
+                }
               }
               executionFinished = true;
             }
@@ -507,6 +542,23 @@ export const WorkerWorkspace: React.FC<WorkerWorkspaceProps> = ({
               </div>
             )}
 
+            {/* Multi-Turn Session Memory Button */}
+            <button
+              onClick={() => setIsSessionMemoryModalOpen(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-cyan-950/30 hover:bg-cyan-900/40 border border-cyan-500/30 hover:border-cyan-400/50 text-cyan-300 text-xs font-mono transition-all group cursor-pointer shadow-sm"
+              title="Inspect Multi-Turn Session Memory (Context RAG, Turn Grounding, & Excerpts)"
+            >
+              <Brain className="w-3.5 h-3.5 text-cyan-400 group-hover:scale-110 transition-transform shrink-0" />
+              <span className="hidden sm:inline">Session Memory</span>
+              {sessionMemory?.active_turn_grounding ? (
+                <span className="px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-200 text-[10px] font-semibold border border-cyan-400/30">
+                  T-{sessionMemory.active_turn_grounding.matched_turn_index} ({Math.round(sessionMemory.active_turn_grounding.amplified_confidence * 100)}%)
+                </span>
+              ) : (
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400/50" />
+              )}
+            </button>
+
             <button
               onClick={handleNewChat}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium shadow-lg shadow-indigo-500/20 transition-all"
@@ -655,6 +707,40 @@ export const WorkerWorkspace: React.FC<WorkerWorkspaceProps> = ({
                           </div>
                         )}
                       </div>
+
+                      {/* Multi-Turn Session Memory Grounding Badge */}
+                      {execData?.session_memory?.active_turn_grounding && (
+                        <div className="flex flex-wrap items-center gap-2 pt-0.5 pb-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSessionMemory(execData.session_memory!);
+                              setIsSessionMemoryModalOpen(true);
+                            }}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-mono bg-cyan-950/40 hover:bg-cyan-900/50 border border-cyan-500/30 hover:border-cyan-400/50 text-cyan-300 transition-all shadow-sm cursor-pointer"
+                            title="Inspect Multi-Turn Session Memory grounding for this turn"
+                          >
+                            <Brain className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                            <span>
+                              {execData.session_memory.active_turn_grounding.is_immediate_preceding
+                                ? `Grounded in Turn ${execData.session_memory.active_turn_grounding.matched_turn_index} (T-1)`
+                                : `Waterfall Anchored: Turn ${execData.session_memory.active_turn_grounding.matched_turn_index}`}
+                            </span>
+                            <span className="text-cyan-400/50">&bull;</span>
+                            <span className="text-emerald-300 font-semibold">
+                              {Math.round(execData.session_memory.active_turn_grounding.amplified_confidence * 100)}% Match
+                            </span>
+                            {execData.session_memory.retrieved_excerpts && execData.session_memory.retrieved_excerpts.length > 0 && (
+                              <>
+                                <span className="text-cyan-400/50">&bull;</span>
+                                <span className="text-cyan-200">
+                                  {execData.session_memory.retrieved_excerpts.length} RAG Excerpt{execData.session_memory.retrieved_excerpts.length > 1 ? 's' : ''}
+                                </span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      )}
 
                       {/* Assistant Text / Summary */}
                       <div className="prose prose-invert max-w-none text-neutral-200 text-sm sm:text-base leading-relaxed">
@@ -859,8 +945,15 @@ export const WorkerWorkspace: React.FC<WorkerWorkspaceProps> = ({
 
           </div>
         </div>
-
       </div>
+
+      {/* Multi-Turn Session Memory Inspector Modal */}
+      <SessionMemoryModal
+        isOpen={isSessionMemoryModalOpen}
+        onClose={() => setIsSessionMemoryModalOpen(false)}
+        sessionMemory={sessionMemory}
+        chatTitle={chatTitle}
+      />
     </div>
   );
 };

@@ -153,6 +153,40 @@ export interface InteractivePlanResponse {
   suggested_focus?: string;
 }
 
+// Multi-turn Session Memory Interfaces
+export interface SessionMemoryTurnCandidate {
+  turn_index: number;
+  raw: number;
+  amplified: number;
+}
+
+export interface SessionMemoryExcerpt {
+  turn_index: number;
+  role: string;
+  heading: string;
+  content: string;
+  score: number;
+}
+
+export interface SessionMemoryActiveGrounding {
+  matched_turn_index: number;
+  is_immediate_preceding: boolean;
+  raw_confidence: number;
+  amplified_confidence: number;
+  raw_gap?: number;
+  candidates_summary?: SessionMemoryTurnCandidate[];
+}
+
+export interface SessionMemoryState {
+  chat_id: string;
+  has_prior_context: boolean;
+  active_turn_grounding?: SessionMemoryActiveGrounding | null;
+  retrieved_excerpts?: SessionMemoryExcerpt[];
+  compressed_history?: string;
+  recent_context_preview?: string;
+  total_indexed_chunks?: number;
+}
+
 // Multi-turn Chat Interfaces
 export interface ChatExecutionData {
   session_id: string;
@@ -160,6 +194,7 @@ export interface ChatExecutionData {
   structured_goal?: StructuredGoal;
   final_evaluation?: FinalEvaluationResult;
   blackboard_state?: BlackboardSnapshot;
+  session_memory?: SessionMemoryState;
 }
 
 export interface ChatMessage {
@@ -191,5 +226,6 @@ export interface ChatSession {
   messages: ChatMessage[];
   blackboard_state?: BlackboardSnapshot;
   latest_evaluation?: FinalEvaluationResult;
+  latest_session_memory?: SessionMemoryState;
   delivery_mode: DeliveryMode;
 }

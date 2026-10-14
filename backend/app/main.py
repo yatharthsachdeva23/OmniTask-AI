@@ -178,6 +178,29 @@ async def get_chat(chat_id: str):
         raise HTTPException(status_code=404, detail="Chat session not found")
     return session
 
+@app.get("/api/chats/{chat_id}/session-memory")
+async def get_chat_session_memory(chat_id: str):
+    """Returns the Multi-Turn Session Memory (Context RAG, turn grounding, and excerpts) for this chat."""
+    session = chat_manager.get_chat(chat_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Chat session not found")
+
+    if session.latest_session_memory:
+        return session.latest_session_memory
+
+    # Dynamically construct snapshot if not yet cached
+    from app.core.context_rag import ChatContextRAG
+    rag = ChatContextRAG(session)
+    pkg = rag.build_context_package("")
+    return pkg.get("session_memory_snapshot") or {
+        "chat_id": chat_id,
+        "has_prior_context": False,
+        "active_turn_grounding": None,
+        "retrieved_excerpts": [],
+        "compressed_history": "",
+        "total_indexed_chunks": 0
+    }
+
 @app.patch("/api/chats/{chat_id}")
 async def update_chat(chat_id: str, payload: ChatUpdateRequest):
     if not payload.title:

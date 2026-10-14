@@ -156,10 +156,29 @@ class PersistentMemoryManager:
                     return True
         return False
 
+    def is_task_specific_detail(self, text: str) -> bool:
+        """
+        Detects whether text describes task-specific / session-specific parameters
+        (such as syllabus units, exam questions, file download formats like PDF/docx, 
+        or MCQs) that belong ONLY to Multi-Turn Session Memory and MUST NEVER be stored
+        in Global Persistent Memory.
+        """
+        t = text.lower().strip()
+        task_patterns = [
+            r'\b(?:unit\s*\d+|units\s*\d+)\b',
+            r'\b(?:syllabus|curriculum|btech|assignment|exam|quiz|mcqs?|fill\s*in\s*the\s*blanks?)\b',
+            r'\b(?:pdf|docx?|word\s*file|doc\s*format|separate\s*pdf|answer\s*key)\b',
+            r'\b(?:difficulty\s*level|hard\s*difficulty|easy\s*difficulty|medium\s*difficulty)\b',
+            r'\b(?:question\s*types?|\d+\s*questions?)\b',
+            r'\b(?:download\s*link|format\s*as\s*doc|format\s*as\s*pdf)\b'
+        ]
+        return any(re.search(p, t) for p in task_patterns)
+
     def extract_heuristics(self, text: str) -> Dict[str, List[str]]:
         """
         Fast, zero-latency heuristic extractor detecting identity, business facts,
         and persistent constraints from natural language turns.
+        Strictly excludes task-level parameters, syllabus units, and file formatting instructions.
         """
         extracted = {
             "identity_and_business": [],
@@ -171,7 +190,7 @@ class PersistentMemoryManager:
         sentences = re.split(r'[,.\n;?!]+', text)
         for s in sentences:
             s_clean = s.strip()
-            if len(s_clean) < 8 or self.is_ephemeral_request(s_clean):
+            if len(s_clean) < 8 or self.is_ephemeral_request(s_clean) or self.is_task_specific_detail(s_clean):
                 continue
             s_lower = s_clean.lower()
 
@@ -205,7 +224,7 @@ class PersistentMemoryManager:
                 continue
 
             if any(k in s_lower for k in ["always organize", "always format", "never include", "never use", "dont ever", "don't ever", "strictly avoid"]):
-                if not self.is_ephemeral_request(s_clean):
+                if not self.is_ephemeral_request(s_clean) and not self.is_task_specific_detail(s_clean):
                     extracted["persistent_rules_and_preferences"].append(f"Rule: {s_clean.capitalize()}.")
                     continue
 
@@ -214,20 +233,26 @@ class PersistentMemoryManager:
     async def _extract_with_llm(self, chat_transcript: str) -> Optional[Dict[str, List[str]]]:
         """
         Uses live LLM (Gemini / Groq) to synthesize high-confidence identity facts
-        and persistent user preferences while strictly filtering out transient commands.
+        and persistent user preferences while strictly filtering out transient commands
+        and task-specific details (syllabus units, question formats, file types).
         """
         system_instruction = (
-            "You are the Persistent Memory Consolidation Agent for OmniTask AI.\n"
-            "Your job is to read conversation history between a User and an AI assistant, "
-            "and extract ONLY durable, important, persistent facts about the user and their business.\n\n"
+            "You are the Global Persistent Memory Agent for OmniTask AI.\n"
+            "Your job is to read past conversations of the User and extract ONLY durable, lifelong facts "
+            "about the user's permanent identity and cross-chat operational rules.\n\n"
+            "CRITICAL ARCHITECTURAL BOUNDARY:\n"
+            "OmniTask AI uses a dual memory architecture:\n"
+            "1. Multi-Turn Session Memory handles individual chat tasks, syllabus units, question types, assignment parameters, and file download formats.\n"
+            "2. Global Persistent Memory (YOUR SOLE RESPONSIBILITY) handles enduring user profile and lifelong rules across ALL chats.\n\n"
             "STRICT EXTRACTION GUIDELINES:\n"
-            "1. WHAT TO EXTRACT:\n"
-            "   - User Identity / Profession / Business Ownership: (e.g., 'User owns a cosmetic shop', 'User is a Python educator', 'Brand name is VelvetGlow').\n"
-            "   - Enduring Constraints & Preferences: (e.g., 'Prefers campaign ideas organized by creative themes rather than day-wise schedules', 'Never reveal puzzle answers in text').\n"
-            "   - Core Domain / Business Offering: (e.g., 'Sells cosmetics and beauty products', 'Publishes AI tutorials for college students').\n\n"
-            "2. WHAT TO STRICTLY IGNORE (NEVER EXTRACT):\n"
-            "   - Ephemeral, one-off execution tasks (e.g., 'make a creative bangle image', 'write a 4-line poem', 'render a 3D ball', 'solve 45+90').\n"
-            "   - Temporary edits or momentary questions.\n\n"
+            "1. WHAT TO EXTRACT (DURABLE USER PROFILE ONLY):\n"
+            "   - User Identity / Profession / Business Ownership: (e.g., 'User owns a cosmetic shop', 'User is an academic instructor', 'Brand name is VelvetGlow').\n"
+            "   - Enduring Global Preferences: (e.g., 'Prefers video ideas organized by creative themes rather than day-wise schedules', 'Avoids direct product promotion; prefers celebration/awareness').\n\n"
+            "2. WHAT TO NEVER EXTRACT (TASK / SESSION DETAILS - STRICTLY FORBIDDEN):\n"
+            "   - Specific course units or syllabus topics (e.g., 'Unit 1-4', 'BTech 4th year curriculum', 'Generative AI subject topics').\n"
+            "   - File output formats and download specifications (e.g., 'separate PDF', 'doc file format', 'downloadable docx', 'answer key PDF').\n"
+            "   - Assignment / test parameters (e.g., 'MCQs and fill in the blanks', 'hard difficulty level', '5 questions each').\n"
+            "   - Ephemeral generation tasks (e.g., 'make a bangle image', 'render a graphic', 'solve problem').\n\n"
             "Return valid JSON matching this exact structure:\n"
             "{\n"
             '  "identity_and_business": ["..."],\n'
@@ -305,8 +330,8 @@ class PersistentMemoryManager:
             if not cand or len(cand.strip()) < 5:
                 continue
             cand_clean = cand.strip().strip("-*• ")
-            # Filter out accidental ephemeral insertions
-            if self.is_ephemeral_request(cand_clean):
+            # Filter out accidental ephemeral insertions and task-specific details
+            if self.is_ephemeral_request(cand_clean) or self.is_task_specific_detail(cand_clean):
                 continue
             norm = self._normalize_fact(cand_clean).lower()
             if norm not in existing_normalized:
